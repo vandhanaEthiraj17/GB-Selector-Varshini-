@@ -173,7 +173,7 @@ export const GearboxSelector: React.FC = () => {
             />
 
             {/* Operating & Design Parameters */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div id="parameters-section" className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <OperatingParametersCard values={inputs} onChange={handleInputChange} />
               <DesignParametersCard values={inputs} onChange={handleInputChange} />
             </div>

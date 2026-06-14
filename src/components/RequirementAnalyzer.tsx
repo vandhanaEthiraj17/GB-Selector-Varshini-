@@ -20,7 +20,6 @@ import {
   verifyEngineeringReport, 
   VerificationReport 
 } from '../services/verificationEngine';
-import { ExtractionReviewPanel } from './ExtractionReviewPanel';
 import { exportToPDF, exportToExcel } from '../services/reportExportService';
 
 interface RequirementAnalyzerProps {
@@ -37,7 +36,6 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
   const [verificationReport, setVerificationReport] = useState<VerificationReport | null>(null);
   const [activeTab, setActiveTab] = useState<'rec' | 'validation' | 'params' | 'trace' | 'limits' | 'verification'>('rec');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [showReviewPanel, setShowReviewPanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Accordion state for calculation steps
@@ -86,7 +84,6 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
     setText('');
     setReasoningResult(null);
     setVerificationReport(null);
-    setShowReviewPanel(false);
     const isImage = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff'].includes(fileExt);
     setUploadStatus(isImage
       ? 'Image uploaded. Click "Analyze & Design Drive" for AI visual extraction.'
@@ -210,7 +207,6 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
       setReasoningResult(solution);
       setVerificationReport(verification);
       setActiveTab('rec');
-      setShowReviewPanel(true);
       if (file) {
         setUploadStatus('Engineering solution generated successfully!');
       }
@@ -230,6 +226,14 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
           serviceFactor: solution.serviceFactor.value,
           stages: solution.stages.value,
         });
+
+        // Smoothly scroll to the Operating & Design Parameters section
+        setTimeout(() => {
+          const paramsSection = document.getElementById('parameters-section');
+          if (paramsSection) {
+            paramsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
       }
     } catch (error) {
       console.error(error);
@@ -249,7 +253,6 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
     setUploadStatus('');
     setReasoningResult(null);
     setVerificationReport(null);
-    setShowReviewPanel(false);
   };
 
   const handleAutoFillClick = () => {
@@ -1697,17 +1700,6 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
       </CardContent>
     </Card>
 
-    {/* Extraction Review Panel — shown below the card after AI analysis */}
-    {showReviewPanel && reasoningResult && (
-      <ExtractionReviewPanel
-        report={reasoningResult}
-        onApply={(overrides) => {
-          onAutoFill(overrides);
-          setShowReviewPanel(false);
-        }}
-        onDismiss={() => setShowReviewPanel(false)}
-      />
-    )}
     </>
   );
 };

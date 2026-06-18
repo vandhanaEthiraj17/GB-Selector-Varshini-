@@ -167,3 +167,9 @@ export const gearboxDatabase: Gearbox[] = [
   {size:"4980-10",series: 4,nominal:605000,rated:786500},
   {size:"4980-12",series: 4,nominal:700000,rated:910000}
 ];
+
+// Enrich database dynamically with realistic thermal capacity (kW) and thrust capacity (kN)
+gearboxDatabase.forEach(gb => {
+  gb.thermal_capacity_kw = gb.thermal_capacity_kw ?? Number((gb.nominal * 0.015).toFixed(2));
+  gb.thrust_load_rating_kn = gb.thrust_load_rating_kn ?? Number((gb.nominal / 200).toFixed(2));
+});

@@ -18,57 +18,21 @@
 // ENUMS & TYPES
 ///////////////////////////////
 
+import type { GearboxInput } from "../types/Gearbox";
+
 export type LoadType = "uniform" | "variable" | "heavy_shock";
+
+
 
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
 
-export type Recommendation = "PREFERRED" | "ACCEPTABLE" | "MARGINAL" | "REJECT";
+export type Recommendation = "PREFERRED" | "ACCEPTABLE" | "MARGINAL" | "REJECT" | "PREFERRED_WITH_WARNING" | "ENGINEERING_REVIEW_REQUIRED";
 
 export type ValidationSeverity = "ERROR" | "WARNING" | "INFO";
 
 export type DerivationMethod = "provided" | "calculated" | "lookup" | "default";
 
-///////////////////////////////
-// INPUT INTERFACE
-///////////////////////////////
-
-export interface GearboxInput {
-  power_kw?: number;
-
-  power_hp?: number;
-
-  input_rpm?: number;
-
-  output_rpm?: number;
-
-  input_torque_nm?: number;
-
-  output_torque_nm?: number;
-
-  total_ratio?: number;
-
-  service_factor?: number;
-
-  application_type: string;
-
-  load_type: LoadType;
-
-  duty_hours_per_day: number;
-
-  starts_per_hour: number;
-
-  frequency_hz?: 50 | 60;
-
-  motor_poles?: 2 | 4 | 6 | 8 | 10 | 12;
-
-  linear_velocity_mm_min?: number;
-
-  screw_pitch_mm?: number;
-
-  axial_load_kn?: number;
-
-  stroke_mm?: number;
-}
+export type { GearboxInput };
 
 ///////////////////////////////
 // DERIVATION LOG
@@ -255,19 +219,19 @@ export const STAGE_MAX_RATIO = {
 //////////////////////////////////////////////////////////////////
 
 export const VALIDATION_LIMITS = {
-  POWER_KW: {
-    min: 0.1,
-    max: 10000,
-  },
-
-  INPUT_RPM: {
+  POWER_W: {
     min: 100,
-    max: 10000,
+    max: 10000000,
   },
 
-  OUTPUT_RPM: {
-    min: 0.1,
-    max: 5000,
+  INPUT_RADS: {
+    min: 100 * 2 * Math.PI / 60,
+    max: 10000 * 2 * Math.PI / 60,
+  },
+
+  OUTPUT_RADS: {
+    min: 0.1 * 2 * Math.PI / 60,
+    max: 5000 * 2 * Math.PI / 60,
   },
 
   RATIO: {
@@ -285,14 +249,14 @@ export const VALIDATION_LIMITS = {
     max: 3,
   },
 
-  PITCH: {
-    min: 1,
-    max: 100,
+  PITCH_M: {
+    min: 0.001,
+    max: 0.1,
   },
 
-  AXIAL_LOAD: {
-    min: 0.1,
-    max: 10000,
+  AXIAL_LOAD_N: {
+    min: 100,
+    max: 10000000,
   },
 };
 
@@ -305,39 +269,39 @@ export class ValidationEngine {
     const flags: ValidationFlag[] = [];
 
     if (
-      input.power_kw &&
-      (input.power_kw < VALIDATION_LIMITS.POWER_KW.min ||
-        input.power_kw > VALIDATION_LIMITS.POWER_KW.max)
+      input.powerW &&
+      (input.powerW < VALIDATION_LIMITS.POWER_W.min ||
+        input.powerW > VALIDATION_LIMITS.POWER_W.max)
     ) {
       flags.push({
         severity: "WARNING",
-        parameter: "power_kw",
+        parameter: "powerW",
         message: "Power outside valid engineering range",
         action: "Verify units or motor specification",
       });
     }
 
     if (
-      input.input_rpm &&
-      (input.input_rpm < VALIDATION_LIMITS.INPUT_RPM.min ||
-        input.input_rpm > VALIDATION_LIMITS.INPUT_RPM.max)
+      input.inputRadS &&
+      (input.inputRadS < VALIDATION_LIMITS.INPUT_RADS.min ||
+        input.inputRadS > VALIDATION_LIMITS.INPUT_RADS.max)
     ) {
       flags.push({
         severity: "WARNING",
-        parameter: "input_rpm",
-        message: "Input RPM outside normal motor range",
+        parameter: "inputRadS",
+        message: "Input speed outside normal motor range",
         action: "Verify motor speed",
       });
     }
 
     if (
-      input.total_ratio &&
-      (input.total_ratio < VALIDATION_LIMITS.RATIO.min ||
-        input.total_ratio > VALIDATION_LIMITS.RATIO.max)
+      input.totalRatio &&
+      (input.totalRatio < VALIDATION_LIMITS.RATIO.min ||
+        input.totalRatio > VALIDATION_LIMITS.RATIO.max)
     ) {
       flags.push({
         severity: "ERROR",
-        parameter: "ratio",
+        parameter: "totalRatio",
         message: "Ratio outside planetary gearbox range",
         action: "Review gearbox architecture",
       });
@@ -353,19 +317,19 @@ export class ValidationEngine {
 
 export class PowerTorqueEngine {
   ////////////////////////////////////
-  // Torque from kW & RPM
+  // Torque from Power & Speed
   ////////////////////////////////////
 
-  static calcTorque(kw: number, rpm: number): number {
-    return (kw * 60000) / (2 * Math.PI * rpm);
+  static calcTorque(powerW: number, speedRadS: number): number {
+    return powerW / speedRadS;
   }
 
   ////////////////////////////////////
-  // Power from Torque & RPM
+  // Power from Torque & Speed
   ////////////////////////////////////
 
-  static calcPower(torqueNm: number, rpm: number): number {
-    return (torqueNm * 2 * Math.PI * rpm) / 60000;
+  static calcPower(torqueNm: number, speedRadS: number): number {
+    return torqueNm * speedRadS;
   }
 
   ////////////////////////////////////
@@ -391,15 +355,15 @@ export class PowerTorqueEngine {
 
 export class MotorSpeedEngine {
   ////////////////////////////////////
-  // Synchronous RPM
+  // Synchronous rad/s
   ////////////////////////////////////
 
   static synchronousSpeed(poles: number, hz: number): number {
-    return (120 * hz) / poles;
+    return (4 * Math.PI * hz) / poles;
   }
 
   ////////////////////////////////////
-  // Actual RPM
+  // Actual rad/s
   ////////////////////////////////////
 
   static actualSpeed(poles: number, hz: number): number {
@@ -412,12 +376,26 @@ export class MotorSpeedEngine {
   // AI Derivation Rule
   ////////////////////////////////////
 
-  static deriveRPM(poles?: number, hz?: number): number | undefined {
+  static deriveRadS(poles?: number, hz?: number): number | undefined {
     if (poles && hz) {
       return this.actualSpeed(poles, hz);
     }
 
     return undefined;
+  }
+
+  static snapToStandardSpeed(calculatedRadS: number): { snapped: number; isSnapped: boolean } {
+    const standardsRPM = [720, 960, 1450, 2900];
+    const standards = standardsRPM.map(rpm => rpm * 2 * Math.PI / 60);
+    for (let i = 0; i < standards.length; i++) {
+      const std = standards[i];
+      const minVal = std * 0.9;
+      const maxVal = std * 1.1;
+      if (calculatedRadS >= minVal && calculatedRadS <= maxVal) {
+        return { snapped: std, isSnapped: true };
+      }
+    }
+    return { snapped: calculatedRadS, isSnapped: false };
   }
 }
 
@@ -426,16 +404,16 @@ export class MotorSpeedEngine {
 //////////////////////////////////////////////////////////////////
 
 export class RatioEngine {
-  static calculateRatio(inputRPM: number, outputRPM: number): number {
-    return inputRPM / outputRPM;
+  static calculateRatio(inputRadS: number, outputRadS: number): number {
+    return inputRadS / outputRadS;
   }
 
-  static outputRPM(inputRPM: number, ratio: number): number {
-    return inputRPM / ratio;
+  static outputRadS(inputRadS: number, ratio: number): number {
+    return inputRadS / ratio;
   }
 
-  static inputRPM(outputRPM: number, ratio: number): number {
-    return outputRPM * ratio;
+  static inputRadS(outputRadS: number, ratio: number): number {
+    return outputRadS * ratio;
   }
 }
 
@@ -716,26 +694,33 @@ export class ScrewJackEngine {
 // SERVICE FACTOR ENGINE
 //////////////////////////////////////////////////////////////
 
+interface SFBracket {
+  defaultSF: number;
+  minSF: number;
+  maxSF: number;
+}
+
 export class ServiceFactorEngine {
+  static getSFBracket(application: string): SFBracket {
+    const app = application.toLowerCase();
+    if (app.includes("conveyor")) return { defaultSF: 1.25, minSF: 1.0, maxSF: 1.5 };
+    if (app.includes("crusher")) return { defaultSF: 2.0, minSF: 1.75, maxSF: 2.5 };
+    if (app.includes("agitator")) return { defaultSF: 1.3, minSF: 1.1, maxSF: 1.6 };
+    if (app.includes("elevator")) return { defaultSF: 1.5, minSF: 1.3, maxSF: 1.75 };
+    if (app.includes("winch")) return { defaultSF: 1.4, minSF: 1.2, maxSF: 1.8 };
+    if (app.includes("jack")) return { defaultSF: 1.25, minSF: 1.0, maxSF: 1.5 };
+    if (app.includes("mixer")) return { defaultSF: 1.5, minSF: 1.25, maxSF: 2.0 };
+    return { defaultSF: 1.5, minSF: 1.0, maxSF: 3.0 }; // fallback
+  }
+
   static calculate(
     application: string,
     dutyHours: number,
     startsPerHour: number,
     environment?: string,
   ): number {
-    let sf = 1.5;
-
-    const app = application.toLowerCase();
-
-    if (app.includes("pump")) sf = 1.25;
-    else if (app.includes("conveyor")) sf = 1.5;
-    else if (app.includes("jack")) sf = 1.5;
-    else if (app.includes("agitator")) sf = 1.75;
-    else if (app.includes("mixer")) sf = 1.75;
-    else if (app.includes("crusher")) sf = 2.0;
-    else if (app.includes("impact")) sf = 3.0;
-
-    //////////////////////////////////////
+    const bracket = this.getSFBracket(application);
+    let sf = bracket.defaultSF;
 
     if (dutyHours > 16) {
       sf += 0.25;
@@ -754,7 +739,7 @@ export class ServiceFactorEngine {
       sf += 0.25;
     }
 
-    return Math.min(sf, 3.0);
+    return Math.max(bracket.minSF, Math.min(sf, bracket.maxSF));
   }
 }
 
@@ -775,6 +760,58 @@ export class PeakFactorEngine {
     }
 
     return 1.5;
+  }
+}
+
+//////////////////////////////////////////////////////////////
+// THERMAL RATING ENGINE
+//////////////////////////////////////////////////////////////
+
+export class ThermalRatingEngine {
+  static calculateAmbientFactor(ambientTemp?: number): number {
+    const temp = ambientTemp ?? 20;
+    return Math.max(0.1, 1.0 - 0.015 * (temp - 20));
+  }
+
+  static verifyThermalLimit(
+    transmittedPowerKW: number,
+    baseThermalCapacityKW: number,
+    ambientTemp?: number,
+  ): { isSafe: boolean; capacity: number; factor: number } {
+    const factor = this.calculateAmbientFactor(ambientTemp);
+    const capacity = baseThermalCapacityKW * factor;
+    return {
+      isSafe: transmittedPowerKW <= capacity,
+      capacity,
+      factor
+    };
+  }
+}
+
+//////////////////////////////////////////////////////////////
+// MOUNTING POSITION ENGINE
+//////////////////////////////////////////////////////////////
+
+export class MountingPositionEngine {
+  static verifyMounting(
+    position?: 'horizontal' | 'vertical_up' | 'vertical_down',
+    thrustLoadN?: number,
+    thrustLoadRatingN?: number,
+  ): { isAllowed: boolean; warnings: string[] } {
+    const warnings: string[] = [];
+    let isAllowed = true;
+
+    if (position && position.startsWith('vertical')) {
+      warnings.push(`Vertical configuration requires dynamic dry-well seals and forced splash lubrication.`);
+      if (thrustLoadN !== undefined && thrustLoadRatingN !== undefined) {
+        if (thrustLoadN > thrustLoadRatingN) {
+          isAllowed = false;
+          warnings.push(`Axial thrust load of ${thrustLoadN} N exceeds vertical thrust capacity of ${thrustLoadRatingN} N.`);
+        }
+      }
+    }
+
+    return { isAllowed, warnings };
   }
 }
 
@@ -889,35 +926,35 @@ export type ApplicationType = (typeof ApplicationType)[keyof typeof ApplicationT
 //////////////////////////////////////////////////////////////
 
 export interface ExtractedParameters {
-  power_kw?: number;
+  powerW?: number;
 
-  power_hp?: number;
+  powerHP?: number;
 
-  input_rpm?: number;
+  inputRadS?: number;
 
-  output_rpm?: number;
+  outputRadS?: number;
 
-  torque_nm?: number;
+  torqueNm?: number;
 
-  ratio?: number;
+  totalRatio?: number;
 
-  axial_load_kn?: number;
+  axialLoadN?: number;
 
-  linear_speed_mm_min?: number;
+  linearVelocityMS?: number;
 
-  pitch_mm?: number;
+  screwPitchM?: number;
 
-  stroke_mm?: number;
+  strokeM?: number;
 
-  temperature_c?: number;
+  ambientTemperatureK?: number;
 
-  frequency_hz?: number;
+  frequencyHz?: number;
 
   application?: ApplicationType;
 
-  service_factor?: number;
+  serviceFactor?: number;
 
-  service_factor_condition?: 'less than' | 'greater than' | 'equal to' | 'minimum' | 'maximum' | null;
+  serviceFactorCondition?: 'less than' | 'greater than' | 'equal to' | 'minimum' | 'maximum' | null;
 
   raw_text: string;
 }
@@ -966,29 +1003,29 @@ export class ParameterExtractionEngine {
 
     if (powerMatchedVal !== null) {
       if (powerMatchedUnit === 'hp' || powerMatchedUnit === 'horsepower' || powerMatchedUnit === 'h.p.') {
-        result.power_hp = powerMatchedVal;
+        result.powerHP = powerMatchedVal;
       } else if (powerMatchedUnit === 'w' || powerMatchedUnit === 'watts') {
-        result.power_kw = powerMatchedVal / 1000;
+        result.powerW = powerMatchedVal;
       } else {
-        result.power_kw = powerMatchedVal; // Default to kW
+        result.powerW = powerMatchedVal * 1000; // Default to kW -> W
       }
     }
 
     // Fallbacks
-    if (result.power_kw === undefined) {
+    if (result.powerW === undefined) {
       const kwMatch = text.match(/(\d+\.?\d*)\s*kW/i);
       const wMatch = text.match(/(\d+\.?\d*)\s*(?:W|watts?)(?!\w)/i);
       if (kwMatch) {
-        result.power_kw = parseFloat(kwMatch[1]);
+        result.powerW = parseFloat(kwMatch[1]) * 1000;
       } else if (wMatch) {
-        result.power_kw = parseFloat(wMatch[1]) / 1000;
+        result.powerW = parseFloat(wMatch[1]);
       }
     }
 
-    if (result.power_hp === undefined) {
+    if (result.powerHP === undefined) {
       const hpMatch = text.match(/(\d+\.?\d*)\s*(HP|hp|h\.p\.)/i);
       if (hpMatch) {
-        result.power_hp = parseFloat(hpMatch[1]);
+        result.powerHP = parseFloat(hpMatch[1]);
       }
     }
 
@@ -997,61 +1034,89 @@ export class ParameterExtractionEngine {
     //////////////////////////////////////////////////
 
     const inputRpmPatterns = [
-      /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(?:RPM|r\/min|speed)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(?:RPM|r\/min|speed)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
+      /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
     ];
+
+    let extractedInputRPM: number | null = null;
 
     for (const p of inputRpmPatterns) {
       const m = text.match(p);
       if (m) {
-        result.input_rpm = parseFloat(m[1]);
+        let val = parseFloat(m[1]);
+        const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
+        const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
+        if (trailing.startsWith('rps')) {
+          val = val * 60;
+        }
+        extractedInputRPM = val;
         break;
       }
     }
 
     const outputRpmPatterns = [
-      /(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(?:RPM|r\/min|speed)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(?:RPM|r\/min|speed)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
+      /(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
     ];
+
+    let extractedOutputRPM: number | null = null;
 
     for (const p of outputRpmPatterns) {
       const m = text.match(p);
       if (m) {
-        result.output_rpm = parseFloat(m[1]);
+        let val = parseFloat(m[1]);
+        const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
+        const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
+        if (trailing.startsWith('rps')) {
+          val = val * 60;
+        }
+        extractedOutputRPM = val;
         break;
       }
     }
 
     // Fallbacks
-    if (!result.output_rpm) {
+    if (!extractedOutputRPM) {
       const outRpmPatterns = [
-        /output.*?(\d+)\s*rpm/i,
-        /(?:drop\s+to|final|pulley|shaft|operating|drum|reduced)\s+(\d+)\s*rpm/i,
-        /(\d+)\s*rpm\s*(?:output|pulley|operating|shaft|final|drum)/i,
-        /speed\s+needs\s+to\s+drop\s+to\s+(\d+)\s*rpm/i
+        /output[^\r\n]*?(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)/i,
+        /(?:drop\s+to|final|pulley|shaft|operating|drum|reduced)[^\S\r\n]+(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)/i,
+        /(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)[^\S\r\n]*(?:output|pulley|operating|shaft|final|drum)/i,
+        /speed\s+needs\s+to\s+drop\s+to\s+(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)/i
       ];
 
       for (const p of outRpmPatterns) {
         const m = text.match(p);
         if (m) {
-          result.output_rpm = parseFloat(m[1]);
+          let val = parseFloat(m[1]);
+          const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
+          const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
+          if (trailing.startsWith('rps')) {
+            val = val * 60;
+          }
+          extractedOutputRPM = val;
           break;
         }
       }
     }
 
-    if (!result.input_rpm) {
+    if (!extractedInputRPM) {
       const inRpmPatterns = [
-        /input.*?(\d+)\s*rpm/i,
-        /(?:motor|input|drive)\s+(\d+)\s*rpm/i,
-        /(\d+)\s*rpm\s*(?:motor|input|drive)/i,
-        /runs\s+at\s+(\d+)\s*rpm/i
+        /input[^\r\n]*?(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)/i,
+        /(?:motor|input|drive)[^\S\r\n]+(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)/i,
+        /(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)[^\S\r\n]*(?:motor|input|drive)/i,
+        /runs\s+at\s+(\d+(?:\.\d+)?)[^\S\r\n]*(rpm|rps)/i
       ];
 
       for (const p of inRpmPatterns) {
         const m = text.match(p);
         if (m) {
-          result.input_rpm = parseFloat(m[1]);
+          let val = parseFloat(m[1]);
+          const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
+          const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
+          if (trailing.startsWith('rps')) {
+            val = val * 60;
+          }
+          extractedInputRPM = val;
           break;
         }
       }
@@ -1067,34 +1132,48 @@ export class ParameterExtractionEngine {
         foundRpms.push(val);
       }
     }
+    const rpsRegex = /\b(\d+(?:\.\d+)?)\s*(?:RPS|rps)\b/gi;
+    while ((match = rpsRegex.exec(text)) !== null) {
+      const val = parseFloat(match[1]) * 60;
+      if (!foundRpms.includes(val)) {
+        foundRpms.push(val);
+      }
+    }
 
     if (foundRpms.length > 0) {
       // Sort in descending order: highest RPM first (likely input), lowest last (likely output)
       foundRpms.sort((a, b) => b - a);
 
-      if (!result.input_rpm && !result.output_rpm) {
+      if (!extractedInputRPM && !extractedOutputRPM) {
         if (foundRpms.length >= 2) {
-          result.input_rpm = foundRpms[0];
-          result.output_rpm = foundRpms[foundRpms.length - 1];
+          extractedInputRPM = foundRpms[0];
+          extractedOutputRPM = foundRpms[foundRpms.length - 1];
         } else {
           const val = foundRpms[0];
           if (val >= 500) {
-            result.input_rpm = val;
+            extractedInputRPM = val;
           } else {
-            result.output_rpm = val;
+            extractedOutputRPM = val;
           }
         }
-      } else if (!result.input_rpm) {
-        const candidate = foundRpms.find(r => r !== result.output_rpm);
+      } else if (!extractedInputRPM) {
+        const candidate = foundRpms.find(r => r !== extractedOutputRPM);
         if (candidate !== undefined) {
-          result.input_rpm = candidate;
+          extractedInputRPM = candidate;
         }
-      } else if (!result.output_rpm) {
-        const candidate = foundRpms.find(r => r !== result.input_rpm);
+      } else if (!extractedOutputRPM) {
+        const candidate = foundRpms.find(r => r !== extractedInputRPM);
         if (candidate !== undefined) {
-          result.output_rpm = candidate;
+          extractedOutputRPM = candidate;
         }
       }
+    }
+
+    if (extractedInputRPM) {
+      result.inputRadS = extractedInputRPM * (2 * Math.PI) / 60;
+    }
+    if (extractedOutputRPM) {
+      result.outputRadS = extractedOutputRPM * (2 * Math.PI) / 60;
     }
 
     //////////////////////////////////////////////////
@@ -1130,31 +1209,31 @@ export class ParameterExtractionEngine {
 
     if (torqueVal !== null) {
       if (torqueUnit === 'kgf') {
-        result.torque_nm = torqueVal * 9.80665;
+        result.torqueNm = torqueVal * 9.80665;
       } else if (torqueUnit === 'ftlb') {
-        result.torque_nm = torqueVal * 1.35581794833;
+        result.torqueNm = torqueVal * 1.35581794833;
       } else if (torqueUnit === 'inlb') {
-        result.torque_nm = torqueVal * 0.112984829;
+        result.torqueNm = torqueVal * 0.112984829;
       } else {
-        result.torque_nm = torqueVal;
+        result.torqueNm = torqueVal;
       }
     }
 
     // Fallbacks
-    if (result.torque_nm === undefined) {
+    if (result.torqueNm === undefined) {
       const torqueNmMatch = text.match(/(\d+\.?\d*)\s*(?:N[·\-\.]?m|Newton[ \-]?meters?)/i);
       const torqueKgfMatch = text.match(/(\d+\.?\d*)\s*(?:kgf?[·\-\.]?m|kg[·\-\.]?m)/i);
       const torqueFtLbMatch = text.match(/(\d+\.?\d*)\s*(?:lb[·\-\.]?ft|ft[·\-\.]?lbs?)/i);
       const torqueInLbMatch = text.match(/(\d+\.?\d*)\s*(?:lb[·\-\.]?in|in[·\-\.]?lbs?)/i);
 
       if (torqueNmMatch) {
-        result.torque_nm = parseFloat(torqueNmMatch[1]);
+        result.torqueNm = parseFloat(torqueNmMatch[1]);
       } else if (torqueKgfMatch) {
-        result.torque_nm = parseFloat(torqueKgfMatch[1]) * 9.80665;
+        result.torqueNm = parseFloat(torqueKgfMatch[1]) * 9.80665;
       } else if (torqueFtLbMatch) {
-        result.torque_nm = parseFloat(torqueFtLbMatch[1]) * 1.35581794833;
+        result.torqueNm = parseFloat(torqueFtLbMatch[1]) * 1.35581794833;
       } else if (torqueInLbMatch) {
-        result.torque_nm = parseFloat(torqueInLbMatch[1]) * 0.112984829;
+        result.torqueNm = parseFloat(torqueInLbMatch[1]) * 0.112984829;
       }
     }
 
@@ -1171,15 +1250,15 @@ export class ParameterExtractionEngine {
     for (const p of ratioPatterns) {
       const m = text.match(p);
       if (m) {
-        result.ratio = parseFloat(m[1]);
+        result.totalRatio = parseFloat(m[1]);
         break;
       }
     }
 
-    if (result.ratio === undefined) {
+    if (result.totalRatio === undefined) {
       const ratio = text.match(/ratio\s*[:=\s]\s*(\d+\.?\d*)/i) || text.match(/(\d+\.?\d*)\s*:\s*1/i);
       if (ratio) {
-        result.ratio = parseFloat(ratio[1]);
+        result.totalRatio = parseFloat(ratio[1]);
       }
     }
 
@@ -1193,13 +1272,13 @@ export class ParameterExtractionEngine {
     const axialLbs = text.match(/(\d+\.?\d*)\s*(?:lbf|lbs?|pounds?)/i);
 
     if (axialKn) {
-      result.axial_load_kn = parseFloat(axialKn[1]);
+      result.axialLoadN = parseFloat(axialKn[1]) * 1000;
     } else if (axialN) {
-      result.axial_load_kn = parseFloat(axialN[1]) / 1000;
+      result.axialLoadN = parseFloat(axialN[1]);
     } else if (axialKg) {
-      result.axial_load_kn = parseFloat(axialKg[1]) * 0.00980665;
+      result.axialLoadN = parseFloat(axialKg[1]) * 9.80665;
     } else if (axialLbs) {
-      result.axial_load_kn = parseFloat(axialLbs[1]) * 0.004448221615;
+      result.axialLoadN = parseFloat(axialLbs[1]) * 4.448221615;
     }
 
     //////////////////////////////////////////////////
@@ -1211,17 +1290,17 @@ export class ParameterExtractionEngine {
       const val = parseFloat(speedMatch[1]);
       const unit = speedMatch[2].toLowerCase();
       if (unit === 'mm/min') {
-        result.linear_speed_mm_min = val;
+        result.linearVelocityMS = val / 60000;
       } else if (unit === 'mm/s') {
-        result.linear_speed_mm_min = val * 60;
+        result.linearVelocityMS = val / 1000;
       } else if (unit === 'm/s') {
-        result.linear_speed_mm_min = val * 60000;
+        result.linearVelocityMS = val;
       } else if (unit === 'm/min') {
-        result.linear_speed_mm_min = val * 1000;
+        result.linearVelocityMS = val / 60;
       } else if (unit === 'in/min' || unit === 'ipm') {
-        result.linear_speed_mm_min = val * 25.4;
+        result.linearVelocityMS = (val * 0.0254) / 60;
       } else if (unit === 'in/s') {
-        result.linear_speed_mm_min = val * 1524;
+        result.linearVelocityMS = val * 0.0254;
       }
     }
 
@@ -1232,7 +1311,7 @@ export class ParameterExtractionEngine {
     const pitch = text.match(/pitch[:\s]*(\d+\.?\d*)\s*mm/i);
 
     if (pitch) {
-      result.pitch_mm = parseFloat(pitch[1]);
+      result.screwPitchM = parseFloat(pitch[1]) / 1000;
     }
 
     //////////////////////////////////////////////////
@@ -1242,7 +1321,7 @@ export class ParameterExtractionEngine {
     const stroke = text.match(/stroke[:\s]*(\d+\.?\d*)\s*mm/i);
 
     if (stroke) {
-      result.stroke_mm = parseFloat(stroke[1]);
+      result.strokeM = parseFloat(stroke[1]) / 1000;
     }
 
     //////////////////////////////////////////////////
@@ -1252,7 +1331,7 @@ export class ParameterExtractionEngine {
     const temp = text.match(/(\d+)\s*°?\s*C/i);
 
     if (temp) {
-      result.temperature_c = parseFloat(temp[1]);
+      result.ambientTemperatureK = parseFloat(temp[1]) + 273.15;
     }
 
     //////////////////////////////////////////////////
@@ -1262,7 +1341,7 @@ export class ParameterExtractionEngine {
     const hz = text.match(/(?:frequency|freq|Hz)\s*[:=\s]*\s*(50|60)/i) || text.match(/(50|60)\s*Hz/i);
 
     if (hz) {
-      result.frequency_hz = parseFloat(hz[1]);
+      result.frequencyHz = parseFloat(hz[1]);
     }
 
     //////////////////////////////////////////////////
@@ -1286,14 +1365,14 @@ export class ParameterExtractionEngine {
       } else if (condRaw === 'maximum' || condRaw === 'max') {
         condition = 'maximum';
       }
-      result.service_factor_condition = condition;
-      result.service_factor = parseFloat(sfCondMatch[2]);
+      result.serviceFactorCondition = condition;
+      result.serviceFactor = parseFloat(sfCondMatch[2]);
     } else {
       const sfSimpleRegex = /(?:service\s+factor|SF|factor)\s*[:=\s]*\s*(?:of|is\s+)?(\d+(?:\.\d+)?)/i;
       const sfSimpleMatch = text.match(sfSimpleRegex);
       if (sfSimpleMatch) {
-        result.service_factor = parseFloat(sfSimpleMatch[1]);
-        result.service_factor_condition = null;
+        result.serviceFactor = parseFloat(sfSimpleMatch[1]);
+        result.serviceFactorCondition = null;
       }
     }
 
@@ -1392,8 +1471,8 @@ export class OCRValidationEngine {
     const flags: ValidationFlag[] = [];
 
     if (
-      params.input_rpm &&
-      (params.input_rpm < 100 || params.input_rpm > 10000)
+      params.inputRadS &&
+      (params.inputRadS < 100 * 2 * Math.PI / 60 || params.inputRadS > 10000 * 2 * Math.PI / 60)
     ) {
       flags.push({
         severity: "WARNING",
@@ -1403,7 +1482,7 @@ export class OCRValidationEngine {
       });
     }
 
-    if (params.power_kw && (params.power_kw < 0.1 || params.power_kw > 10000)) {
+    if (params.powerW && (params.powerW < 100 || params.powerW > 10000000)) {
       flags.push({
         severity: "WARNING",
         parameter: "Power",
@@ -1412,7 +1491,7 @@ export class OCRValidationEngine {
       });
     }
 
-    if (params.ratio && (params.ratio < 1 || params.ratio > 2000)) {
+    if (params.totalRatio && (params.totalRatio < 1 || params.totalRatio > 2000)) {
       flags.push({
         severity: "WARNING",
         parameter: "Ratio",
@@ -1460,25 +1539,30 @@ export class MultiSourceResolutionEngine {
 //////////////////////////////////////////////////////////////
 
 export class MissingDataResolutionEngine {
-  static resolveInputRPM(input: GearboxInput): number | undefined {
+  static resolveInputRadS(input: GearboxInput): number | undefined {
     // 1. Direct input found, do not perform calculations
-    if (input.input_rpm) {
-      return input.input_rpm;
+    if (input.inputRadS) {
+      return input.inputRadS;
     }
 
-    // 2. Reverse from output rpm and ratio
-    if (input.output_rpm && input.total_ratio) {
-      return input.output_rpm * input.total_ratio;
-    }
+    let calculated: number | undefined = undefined;
 
+    // 2. Reverse from output speed and ratio
+    if (input.outputRadS && input.totalRatio) {
+      calculated = input.outputRadS * input.totalRatio;
+    }
     // 3. Reverse from power and torque
-    if (input.power_kw && input.input_torque_nm) {
-      return (input.power_kw * 60000) / (2 * Math.PI * input.input_torque_nm);
+    else if (input.powerW && input.inputTorqueNm) {
+      calculated = input.powerW / input.inputTorqueNm;
+    }
+    // 4. Derive from poles
+    else if (input.motorPoles && input.frequencyHz) {
+      calculated = MotorSpeedEngine.actualSpeed(input.motorPoles, input.frequencyHz);
     }
 
-    // 4. Derive from poles
-    if (input.motor_poles && input.frequency_hz) {
-      return MotorSpeedEngine.actualSpeed(input.motor_poles, input.frequency_hz);
+    if (calculated !== undefined) {
+      const snapResult = MotorSpeedEngine.snapToStandardSpeed(calculated);
+      return snapResult.snapped;
     }
 
     return undefined;
@@ -1488,19 +1572,23 @@ export class MissingDataResolutionEngine {
 
   static resolvePower(input: GearboxInput): number | undefined {
     // 1. Direct input found, do not perform calculations
-    if (input.power_kw) {
-      return input.power_kw;
+    if (input.powerW) {
+      return input.powerW;
     }
 
-    if (input.power_hp) {
-      return input.power_hp * 0.7457;
+    if (input.powerHP) {
+      return input.powerHP * 745.7;
     }
 
     // 2. Chained resolution
-    const rpm = MissingDataResolutionEngine.resolveInputRPM(input);
+    const rads = MissingDataResolutionEngine.resolveInputRadS(input);
     const torque = MissingDataResolutionEngine.resolveTorque(input);
-    if (torque && rpm) {
-      return (torque * 2 * Math.PI * rpm) / 60000;
+    if (torque && rads) {
+      return torque * rads;
+    }
+
+    if (input.outputTorqueNm && input.outputRadS) {
+      return input.outputTorqueNm * input.outputRadS;
     }
 
     return undefined;
@@ -1510,23 +1598,29 @@ export class MissingDataResolutionEngine {
 
   static resolveTorque(input: GearboxInput): number | undefined {
     // 1. Direct input found, do not perform calculations
-    if (input.input_torque_nm) {
-      return input.input_torque_nm;
+    if (input.inputTorqueNm) {
+      return input.inputTorqueNm;
     }
 
     // 2. Chained resolution
-    const powerKw = input.power_kw || (input.power_hp ? input.power_hp * 0.7457 : undefined);
-    const inputRpm = MissingDataResolutionEngine.resolveInputRPM(input);
+    const powerW = input.powerW || (input.powerHP ? input.powerHP * 745.7 : undefined);
+    const inputRadS = MissingDataResolutionEngine.resolveInputRadS(input);
 
-    if (powerKw && inputRpm) {
-      return (powerKw * 60000) / (2 * Math.PI * inputRpm);
+    if (powerW && inputRadS) {
+      return powerW / inputRadS;
     }
 
-    if (input.axial_load_kn && input.screw_pitch_mm) {
+    if (input.axialLoadN && input.screwPitchM) {
       return (
-        (input.axial_load_kn * 1000 * input.screw_pitch_mm) /
-        (2000 * Math.PI * 0.4)
+        (input.axialLoadN * input.screwPitchM) /
+        (2 * Math.PI * 0.4)
       );
+    }
+
+    if (input.outputTorqueNm && input.totalRatio) {
+      const stageCount = StageCountEngine.determineStageCount(input.totalRatio);
+      const efficiency = input.efficiency !== undefined ? input.efficiency : Math.pow(0.97, stageCount);
+      return input.outputTorqueNm / (input.totalRatio * efficiency);
     }
 
     return undefined;
@@ -1536,15 +1630,19 @@ export class MissingDataResolutionEngine {
 
   static resolveRatio(input: GearboxInput): number | undefined {
     // 1. Direct input found, do not perform calculations
-    if (input.total_ratio) {
-      return input.total_ratio;
+    if (input.totalRatio) {
+      return input.totalRatio;
     }
 
     // 2. Chained resolution
-    const inputRpm = MissingDataResolutionEngine.resolveInputRPM(input);
-    const outputRpm = MissingDataResolutionEngine.resolveOutputRPM(input);
-    if (inputRpm && outputRpm) {
-      return inputRpm / outputRpm;
+    const inputRadS = MissingDataResolutionEngine.resolveInputRadS(input);
+    const outputRadS = MissingDataResolutionEngine.resolveOutputRadS(input);
+    if (inputRadS && outputRadS) {
+      return inputRadS / outputRadS;
+    }
+
+    if (input.outputTorqueNm && input.inputTorqueNm) {
+      return input.outputTorqueNm / input.inputTorqueNm;
     }
 
     return undefined;
@@ -1552,20 +1650,25 @@ export class MissingDataResolutionEngine {
 
   //////////////////////////////////////////////////
 
-  static resolveOutputRPM(input: GearboxInput): number | undefined {
+  static resolveOutputRadS(input: GearboxInput): number | undefined {
     // 1. Direct input found, do not perform calculations
-    if (input.output_rpm) {
-      return input.output_rpm;
+    if (input.outputRadS) {
+      return input.outputRadS;
     }
 
     // 2. Chained resolution
-    const inputRpm = MissingDataResolutionEngine.resolveInputRPM(input);
-    if (inputRpm && input.total_ratio) {
-      return inputRpm / input.total_ratio;
+    const inputRadS = MissingDataResolutionEngine.resolveInputRadS(input);
+    if (inputRadS && input.totalRatio) {
+      return inputRadS / input.totalRatio;
     }
 
-    if (input.linear_velocity_mm_min && input.screw_pitch_mm) {
-      return input.linear_velocity_mm_min / input.screw_pitch_mm;
+    if (input.linearVelocityMS && input.screwPitchM) {
+      return (input.linearVelocityMS * 2 * Math.PI) / input.screwPitchM;
+    }
+
+    const powerW = input.powerW || (input.powerHP ? input.powerHP * 745.7 : undefined);
+    if (powerW && input.outputTorqueNm) {
+      return powerW / input.outputTorqueNm;
     }
 
     return undefined;
@@ -1575,14 +1678,14 @@ export class MissingDataResolutionEngine {
 
   static resolveServiceFactor(input: GearboxInput): number {
     // 1. Direct input found, do not perform calculations
-    if (input.service_factor) {
-      return input.service_factor;
+    if (input.serviceFactor) {
+      return input.serviceFactor;
     }
 
     return ServiceFactorEngine.calculate(
-      input.application_type,
-      input.duty_hours_per_day,
-      input.starts_per_hour,
+      input.applicationType,
+      input.dutyHoursPerDay,
+      input.startsPerHour,
     );
   }
 }
@@ -1642,6 +1745,7 @@ export class GearboxSelectionEngine {
     requiredMaximum: number,
     targetRatio: number,
     motorRPM: number,
+    input?: GearboxInput,
   ): GearboxCandidate[] {
     const candidates: GearboxCandidate[] = [];
 
@@ -1657,18 +1761,60 @@ export class GearboxSelectionEngine {
 
       const maxCheck = gb.rated >= requiredMaximum;
 
-      // Speed check: standard MAGTORQ input speed limit is 3000 RPM
-      const maxInputRPM = 3000;
+      // Speed check: standard MAGTORQ input speed limit is 3000 RPM (3000 * 2pi / 60 rad/s)
+      const maxInputRadS = 3000 * 2 * Math.PI / 60;
 
-      const speedCheck = maxInputRPM >= motorRPM;
+      const speedCheck = maxInputRadS >= motorRPM;
 
-      if (nominalCheck && maxCheck && speedCheck) {
+      // Thermal rating check
+      let thermalSafe = true;
+      if (input && input.powerW && gb.thermal_capacity_kw !== undefined) {
+        const thermalCheck = ThermalRatingEngine.verifyThermalLimit(
+          input.powerW / 1000,
+          gb.thermal_capacity_kw,
+          input.ambientTemperatureK !== undefined ? input.ambientTemperatureK - 273.15 : undefined,
+        );
+        thermalSafe = thermalCheck.isSafe;
+      }
+
+      // Mounting check
+      let mountingAllowed = true;
+      if (input && input.mountingPosition) {
+        const mountingCheck = MountingPositionEngine.verifyMounting(
+          input.mountingPosition,
+          input.axialThrustLoadN,
+          gb.thrust_load_rating_kn !== undefined ? gb.thrust_load_rating_kn * 1000 : undefined,
+        );
+        mountingAllowed = mountingCheck.isAllowed;
+      }
+
+      if (nominalCheck && maxCheck && speedCheck && thermalSafe && mountingAllowed) {
         const sf = SafetyFactorEngine.calculate(
           gb.nominal,
           gb.rated,
           requiredNominal,
           requiredMaximum,
         );
+
+        // Derive confidence level to pass down
+        let confidenceLevel: ConfidenceLevel = "HIGH";
+        if (input) {
+          const hasPower = !!input.powerW || !!input.powerHP;
+          const hasInputRpm = !!input.inputRadS || (!!input.motorPoles && !!input.frequencyHz);
+          const hasServiceFactor = !!input.serviceFactor;
+          const hasRatio = !!input.totalRatio;
+          const hasEfficiency = !!input.efficiency;
+
+          let assumptions = 0;
+          if (!hasPower) assumptions++;
+          if (!hasInputRpm) assumptions++;
+          if (!hasServiceFactor) assumptions++;
+          if (!hasRatio) assumptions++;
+          if (!hasEfficiency) assumptions++;
+
+          if (assumptions === 1) confidenceLevel = "MEDIUM";
+          else if (assumptions >= 2) confidenceLevel = "LOW";
+        }
 
         candidates.push({
           model_id: gb.size,
@@ -1679,11 +1825,11 @@ export class GearboxSelectionEngine {
 
           actual_ratio: targetRatio,
 
-          max_input_rpm: maxInputRPM,
+          max_input_rpm: 3000,
 
           safety_factor: sf,
 
-          recommendation: CandidateRankingEngine.recommendation(sf),
+          recommendation: CandidateRankingEngine.recommendation(sf, confidenceLevel),
         });
       }
     }
@@ -1699,25 +1845,49 @@ export class GearboxSelectionEngine {
 export class CandidateRankingEngine {
   static recommendation(
     sf: number,
-  ): "PREFERRED" | "ACCEPTABLE" | "MARGINAL" | "REJECT" {
+    confidenceLevel?: ConfidenceLevel
+  ): Recommendation {
     if (sf < 1.0) return "REJECT";
 
     if (sf < 1.1) return "MARGINAL";
 
-    if (sf <= 1.5) return "PREFERRED";
+    const base = sf <= 1.5 ? "PREFERRED" : "ACCEPTABLE";
 
-    return "ACCEPTABLE";
+    if (confidenceLevel === "LOW") {
+      return "ENGINEERING_REVIEW_REQUIRED";
+    }
+
+    if (confidenceLevel === "MEDIUM" && base === "PREFERRED") {
+      return "PREFERRED_WITH_WARNING";
+    }
+
+    return base;
   }
 
-  static rank(candidates: GearboxCandidate[]): GearboxCandidate[] {
+  static rank(candidates: GearboxCandidate[], input?: GearboxInput): GearboxCandidate[] {
     return candidates.sort((a, b) => {
-      const target = 1.3;
+      const getWeightedScore = (c: GearboxCandidate) => {
+        const D_safety = Math.abs(c.safety_factor - 1.3);
 
-      const da = Math.abs(a.safety_factor - target);
+        let D_thermal = 0.5;
+        let D_ratio = 0.0;
 
-      const db = Math.abs(b.safety_factor - target);
+        const gb = gearboxDatabase.find(g => g.size === c.model_id);
+        if (gb) {
+          if (input && input.powerW && gb.thermal_capacity_kw) {
+            const f_ambient = ThermalRatingEngine.calculateAmbientFactor(input.ambientTemperatureK !== undefined ? input.ambientTemperatureK - 273.15 : undefined);
+            const capacity = gb.thermal_capacity_kw * f_ambient;
+            D_thermal = Math.abs(1.0 - ((input.powerW / 1000) / capacity));
+          }
+          if (input && input.totalRatio) {
+            D_ratio = Math.abs(c.actual_ratio - input.totalRatio) / input.totalRatio;
+          }
+        }
 
-      return da - db;
+        return 0.50 * D_safety + 0.30 * D_thermal + 0.20 * D_ratio;
+      };
+
+      return getWeightedScore(a) - getWeightedScore(b);
     });
   }
 }
@@ -1729,43 +1899,34 @@ export class CandidateRankingEngine {
 export class ConfidenceScoringEngine {
   static calculate(options: {
     powerDerived?: boolean;
-
     rpmDerived?: boolean;
-
     serviceFactorDerived?: boolean;
-
     ratioCalculated?: boolean;
-
     applicationInferred?: boolean;
-
     multipleMissing?: boolean;
-
     noValidationData?: boolean;
+    assumptionsCount?: number;
   }): number {
-    let score = 1.0;
+    if (options.assumptionsCount !== undefined) {
+      if (options.assumptionsCount === 0) return 1.0;
+      if (options.assumptionsCount === 1) return 0.7;
+      return 0.4;
+    }
 
-    if (options.powerDerived) score -= 0.1;
+    let assumptions = 0;
+    if (options.powerDerived) assumptions++;
+    if (options.rpmDerived) assumptions++;
+    if (options.serviceFactorDerived) assumptions++;
+    if (options.ratioCalculated) assumptions++;
 
-    if (options.rpmDerived) score -= 0.05;
-
-    if (options.serviceFactorDerived) score -= 0.1;
-
-    if (options.ratioCalculated) score -= 0.05;
-
-    if (options.applicationInferred) score -= 0.15;
-
-    if (options.multipleMissing) score -= 0.2;
-
-    if (options.noValidationData) score -= 0.1;
-
-    return Math.max(0, Number(score.toFixed(2)));
+    if (assumptions === 0) return 1.0;
+    if (assumptions === 1) return 0.7;
+    return 0.4;
   }
 
   static confidenceLevel(score: number): "HIGH" | "MEDIUM" | "LOW" {
-    if (score >= 0.85) return "HIGH";
-
+    if (score >= 0.9) return "HIGH";
     if (score >= 0.6) return "MEDIUM";
-
     return "LOW";
   }
 
@@ -2042,18 +2203,62 @@ export class ReportGenerator {
 
 export class GearboxCalculationPipeline {
   static execute(input: GearboxInput): CalculationResult {
+    const hasPower = !!input.powerW || !!input.powerHP;
+    const hasInputRpm = !!input.inputRadS || (!!input.motorPoles && !!input.frequencyHz);
+    const hasServiceFactor = !!input.serviceFactor;
+    const hasRatio = !!input.totalRatio;
+    const hasEfficiency = !!input.efficiency;
+
+    let assumptionsCount = 0;
+    if (!hasPower) assumptionsCount++;
+    if (!hasInputRpm) assumptionsCount++;
+    if (!hasServiceFactor) assumptionsCount++;
+    if (!hasRatio) assumptionsCount++;
+    if (!hasEfficiency) assumptionsCount++;
+
     //////////////////////////////////////////////////////
     // RESOLVE DATA
     //////////////////////////////////////////////////////
 
     const power = MissingDataResolutionEngine.resolvePower(input);
+    if (power && !input.powerW) {
+      input.powerW = power;
+    }
+
+    const inputRadS = MissingDataResolutionEngine.resolveInputRadS(input);
+    if (inputRadS && !input.inputRadS) {
+      input.inputRadS = inputRadS;
+    }
+
+    const outputRadS = MissingDataResolutionEngine.resolveOutputRadS(input);
+    if (outputRadS && !input.outputRadS) {
+      input.outputRadS = outputRadS;
+    }
 
     const torque = MissingDataResolutionEngine.resolveTorque(input);
+    if (torque) {
+      const isScrewJack = input.applicationType?.toUpperCase().replace("_", " ") === "SCREW JACK";
+      if (isScrewJack) {
+        if (!input.outputTorqueNm) {
+          input.outputTorqueNm = torque;
+        }
+      } else {
+        if (!input.inputTorqueNm) {
+          input.inputTorqueNm = torque;
+        }
+      }
+    }
 
     const ratio = MissingDataResolutionEngine.resolveRatio(input)!;
+    if (ratio && !input.totalRatio) {
+      input.totalRatio = ratio;
+    }
 
     const serviceFactor =
       MissingDataResolutionEngine.resolveServiceFactor(input);
+    if (serviceFactor && !input.serviceFactor) {
+      input.serviceFactor = serviceFactor;
+    }
 
     //////////////////////////////////////////////////////
     // STAGE COUNT
@@ -2075,16 +2280,14 @@ export class GearboxCalculationPipeline {
     //////////////////////////////////////////////////////
 
     let inputTorque: number;
-    const isScrewJack =
-      input.application_type?.toUpperCase().replace("_", " ") === "SCREW JACK";
-
-    if (isScrewJack) {
-      const outputTorqueTarget = torque!;
-      const efficiency = Math.pow(0.97, stageCount);
-      inputTorque = outputTorqueTarget / (ratio * efficiency);
+    if (input.inputTorqueNm) {
+      inputTorque = input.inputTorqueNm;
+    } else if (input.outputTorqueNm && ratio) {
+      const efficiency = input.efficiency !== undefined ? input.efficiency : Math.pow(0.97, stageCount);
+      inputTorque = input.outputTorqueNm / (ratio * efficiency);
     } else {
       inputTorque =
-        torque ?? PowerTorqueEngine.calcTorque(power!, input.input_rpm!);
+        torque ?? PowerTorqueEngine.calcTorque(power!, input.inputRadS!);
     }
 
     //////////////////////////////////////////////////////
@@ -2094,6 +2297,7 @@ export class GearboxCalculationPipeline {
     const stageTorques = TorquePropagationEngine.propagateTorques(
       inputTorque,
       stageRatios,
+      input.efficiency !== undefined ? Math.pow(input.efficiency, 1 / stageCount) : 0.97,
     );
 
     //////////////////////////////////////////////////////
@@ -2101,7 +2305,7 @@ export class GearboxCalculationPipeline {
     //////////////////////////////////////////////////////
 
     const stageSpeeds = TorquePropagationEngine.propagateSpeeds(
-      input.input_rpm!,
+      input.inputRadS!,
       stageRatios,
     );
 
@@ -2115,7 +2319,7 @@ export class GearboxCalculationPipeline {
     // PEAK FACTOR
     //////////////////////////////////////////////////////
 
-    const peakFactor = PeakFactorEngine.getPeakFactor(input.application_type);
+    const peakFactor = PeakFactorEngine.getPeakFactor(input.applicationType);
 
     //////////////////////////////////////////////////////
     // REQUIRED TORQUES
@@ -2137,19 +2341,7 @@ export class GearboxCalculationPipeline {
     //////////////////////////////////////////////////////
 
     const confidenceScore = ConfidenceScoringEngine.calculate({
-      powerDerived: !input.power_kw,
-
-      rpmDerived: !input.input_rpm,
-
-      serviceFactorDerived: !input.service_factor,
-
-      ratioCalculated: !input.total_ratio,
-
-      applicationInferred: false,
-
-      multipleMissing: false,
-
-      noValidationData: false,
+      assumptionsCount,
     });
 
     return {
@@ -2173,7 +2365,7 @@ export class GearboxCalculationPipeline {
 
       required_maximum_nm: requiredMaximum,
 
-      overall_efficiency: TorquePropagationEngine.overallEfficiency(stageCount),
+      overall_efficiency: input.efficiency !== undefined ? input.efficiency : TorquePropagationEngine.overallEfficiency(stageCount),
 
       derivation_log: [],
 
@@ -2190,6 +2382,19 @@ export class GearboxCalculationPipeline {
 
 export class GearboxSelectorEngine {
   static run(input: GearboxInput): EngineeringReport {
+    const hasPower = !!input.powerW || !!input.powerHP;
+    const hasInputRpm = !!input.inputRadS || (!!input.motorPoles && !!input.frequencyHz);
+    const hasServiceFactor = !!input.serviceFactor;
+    const hasRatio = !!input.totalRatio;
+    const hasEfficiency = !!input.efficiency;
+
+    let assumptionsCount = 0;
+    if (!hasPower) assumptionsCount++;
+    if (!hasInputRpm) assumptionsCount++;
+    if (!hasServiceFactor) assumptionsCount++;
+    if (!hasRatio) assumptionsCount++;
+    if (!hasEfficiency) assumptionsCount++;
+
     //////////////////////////////////////////////////////
     // VALIDATION
     //////////////////////////////////////////////////////
@@ -2213,14 +2418,15 @@ export class GearboxSelectorEngine {
 
       calculations.total_ratio,
 
-      input.input_rpm!,
+      input.inputRadS!,
+      input,
     );
 
     //////////////////////////////////////////////////////
     // RANK
     //////////////////////////////////////////////////////
 
-    const ranked = CandidateRankingEngine.rank(candidates);
+    const ranked = CandidateRankingEngine.rank(candidates, input);
 
     if (ranked.length === 0) {
       throw new Error("No gearbox satisfies requirements.");
@@ -2237,13 +2443,7 @@ export class GearboxSelectorEngine {
     //////////////////////////////////////////////////////
 
     const confidence = ConfidenceScoringEngine.calculate({
-      powerDerived: !input.power_kw,
-
-      rpmDerived: !input.input_rpm,
-
-      serviceFactorDerived: !input.service_factor,
-
-      ratioCalculated: !input.total_ratio,
+      assumptionsCount,
     });
 
     //////////////////////////////////////////////////////
@@ -2273,7 +2473,7 @@ export class GearboxSelectorEngine {
     //////////////////////////////////////////////////////
 
     return ReportGenerator.generate(
-      input.application_type,
+      input.applicationType,
 
       best,
 
@@ -2296,19 +2496,19 @@ export function runGearboxSelector(input: GearboxInput): EngineeringReport {
 
 try {
   const conveyorExample = runGearboxSelector({
-    application_type: "belt conveyor",
+    applicationType: "belt conveyor",
 
-    load_type: "variable",
+    loadType: "variable",
 
-    power_kw: 15,
+    powerW: 15000,
 
-    input_rpm: 1440,
+    inputRadS: 1440 * 2 * Math.PI / 60,
 
-    output_rpm: 20,
+    outputRadS: 20 * 2 * Math.PI / 60,
 
-    duty_hours_per_day: 12,
+    dutyHoursPerDay: 12,
 
-    starts_per_hour: 4,
+    startsPerHour: 4,
   });
 
   console.log("Conveyor Example Selected Gearbox:", conveyorExample.summary.selected_gearbox);
@@ -2318,24 +2518,25 @@ try {
 
 try {
   const screwJackExample = runGearboxSelector({
-    application_type: "screw jack",
+    applicationType: "screw jack",
 
-    load_type: "uniform",
+    loadType: "uniform",
 
-    axial_load_kn: 35.5,
+    axialLoadN: 35500,
 
-    screw_pitch_mm: 6,
+    screwPitchM: 0.006,
 
-    input_rpm: 910,
+    inputRadS: 910 * 2 * Math.PI / 60,
 
-    linear_velocity_mm_min: 300,
+    linearVelocityMS: 0.005,
 
-    duty_hours_per_day: 8,
+    dutyHoursPerDay: 8,
 
-    starts_per_hour: 2,
+    startsPerHour: 2,
   });
 
   console.log("Screw Jack Example Selected Gearbox:", screwJackExample.summary.selected_gearbox);
 } catch (e) {
   console.error("Screw Jack Example failed:", e);
 }
+

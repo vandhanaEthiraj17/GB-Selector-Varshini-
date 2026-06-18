@@ -83,6 +83,12 @@ describe('VE-1: Formula Verification — Calculation Re-computation', () => {
     const verification = verifyEngineeringReport(report, extracted);
 
     const failedCalcs = verification.calculationsAudited.filter(c => !c.passed);
+    console.log("REPORT:", {
+      inputRPM: report.inputRPM,
+      outputRPM: report.outputRPM,
+      totalRatio: report.totalRatio
+    });
+    console.log("FAILED CALCS:", failedCalcs);
     expect(failedCalcs).toHaveLength(0);
   });
 
@@ -214,8 +220,8 @@ describe('Service Factor Condition parsing and calculations', () => {
     const rawText = '15 kW conveyor. 1440 RPM. Ratio 72. Service factor minimum 1.8.';
     const report = generateAuditReport(rawText, {
       projectName: 'SF Condition Min',
-      powerKW: 15,
-      inputRPM: 1440,
+      powerW: 15000,
+      inputRadS: 1440 * 2 * Math.PI / 60,
       targetRatio: 72,
       serviceFactor: null,
       serviceFactorCondition: null
@@ -229,8 +235,8 @@ describe('Service Factor Condition parsing and calculations', () => {
     const rawText = '15 kW conveyor. 1440 RPM. Ratio 72. Service factor maximum 1.2.';
     const report = generateAuditReport(rawText, {
       projectName: 'SF Condition Max',
-      powerKW: 15,
-      inputRPM: 1440,
+      powerW: 15000,
+      inputRadS: 1440 * 2 * Math.PI / 60,
       targetRatio: 72,
       serviceFactor: null,
       serviceFactorCondition: null
@@ -244,8 +250,8 @@ describe('Service Factor Condition parsing and calculations', () => {
     const rawText = '15 kW conveyor. 1440 RPM. Ratio 72. Service factor less than 1.6.';
     const report = generateAuditReport(rawText, {
       projectName: 'SF Condition Less Than',
-      powerKW: 15,
-      inputRPM: 1440,
+      powerW: 15000,
+      inputRadS: 1440 * 2 * Math.PI / 60,
       targetRatio: 72,
       serviceFactor: null,
       serviceFactorCondition: null

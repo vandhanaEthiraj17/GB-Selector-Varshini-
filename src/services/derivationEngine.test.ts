@@ -4,18 +4,18 @@ import { generateAuditReport } from './engineeringReasoningEngine';
 import { verifyEngineeringReport } from './verificationEngine';
 
 describe('Phase 1 Derivation Rules Formula Accuracy', () => {
-  it('should verify DR-001: Conveyor Belt Speed to Output RPM', () => {
+  it('should verify DR-001: Conveyor Belt Speed to Output RadS', () => {
     const rule = derivationRules.find(r => r.id === 'DR-001')!;
     const res = rule.formula({ beltSpeed_m_s: 2.5, pulleyDiameter_m: 0.8 });
-    // N = (2.5 * 60) / (pi * 0.8) = 150 / 2.51327 = 59.683
-    expect(res).toBeCloseTo(59.683, 3);
+    // w = 2 * 2.5 / 0.8 = 6.25 rad/s
+    expect(res).toBeCloseTo(6.25, 3);
   });
 
-  it('should verify DR-002: Chain Conveyor Speed to Output RPM', () => {
+  it('should verify DR-002: Chain Conveyor Speed to Output RadS', () => {
     const rule = derivationRules.find(r => r.id === 'DR-002')!;
     const res = rule.formula({ chainSpeed_m_s: 0.5, sprocketPCD_m: 0.4 });
-    // N = (0.5 * 60) / (pi * 0.4) = 30 / 1.2566 = 23.873
-    expect(res).toBeCloseTo(23.873, 3);
+    // w = 2 * 0.5 / 0.4 = 2.5 rad/s
+    expect(res).toBeCloseTo(2.5, 3);
   });
 
   it('should verify DR-005: Belt Pull to Torque', () => {
@@ -35,8 +35,8 @@ describe('Phase 1 Derivation Rules Formula Accuracy', () => {
   it('should verify DR-008: Fan Power', () => {
     const rule = derivationRules.find(r => r.id === 'DR-008')!;
     const res = rule.formula({ airflow_m3_s: 8.5, staticPressure_Pa: 1200, fanEfficiency: 0.75 });
-    // P = (8.5 * 1200) / (1000 * 0.75) = 10200 / 750 = 13.6 kW
-    expect(res).toBeCloseTo(13.6, 2);
+    // P = (8.5 * 1200) / 0.75 = 10200 / 0.75 = 13600 W
+    expect(res).toBeCloseTo(13600, 2);
   });
 
   it('should verify DR-009: Pump Power', () => {
@@ -47,14 +47,14 @@ describe('Phase 1 Derivation Rules Formula Accuracy', () => {
       pumpEfficiency: 0.70,
       liquidDensity_kg_m3: 1000
     });
-    // P = (1000 * 9.80665 * 0.05 * 45) / (1000 * 0.7) = 22064.96 / 700 = 31.521 kW
-    expect(res).toBeCloseTo(31.521, 3);
+    // P = (1000 * 9.80665 * 0.05 * 45) / 0.7 = 22064.96 / 0.7 = 31521.375 W
+    expect(res).toBeCloseTo(31521.375, 3);
   });
 
   it('should verify DR-010: Acceleration Torque', () => {
     const rule = derivationRules.find(r => r.id === 'DR-010')!;
-    const res = rule.formula({ systemInertia_kg_m2: 5.2, deltaSpeed_RPM: 1440, accelTime_s: 3.5 });
-    // alpha = (1440 * 2pi) / (60 * 3.5) = 9047.78 / 210 = 43.085 rad/s2
+    const res = rule.formula({ systemInertia_kg_m2: 5.2, deltaSpeed_RadS: 1440 * 2 * Math.PI / 60, accelTime_s: 3.5 });
+    // alpha = (1440 * 2pi) / (60 * 3.5) = 43.085 rad/s2
     // T = 5.2 * 43.085 = 224.043 Nm
     expect(res).toBeCloseTo(224.04, 2);
   });
@@ -65,17 +65,17 @@ describe('Phase 1 Derivation Rules Formula Accuracy', () => {
       loadTorques_Nm: [100, 200, 150],
       loadDurations_s: [10, 20, 15]
     });
-    // weightedSum = 100^2 * 10 + 200^2 * 20 + 150^2 * 15 = 100000 + 800000 + 337500 = 1,237,500
+    // weightedSum = 100^2 * 10 + 200^2 * 20 + 150^2 * 15 = 1,237,500
     // totalTime = 45
-    // RMS = sqrt(1,237,500 / 45) = sqrt(27500) = 165.83
+    // RMS = sqrt(1,237,500 / 45) = 165.83
     expect(res).toBeCloseTo(165.83, 2);
   });
 
   it('should verify DR-013: Thermal Duty Cycle Power', () => {
     const rule = derivationRules.find(r => r.id === 'DR-013')!;
-    const res = rule.formula({ designPower_kW: 45, onTime_min: 15, offTime_min: 45 });
-    // P_eff = 45 * sqrt(15 / 60) = 45 * sqrt(0.25) = 22.5 kW
-    expect(res).toBe(22.5);
+    const res = rule.formula({ designPower_W: 45000, onTime_min: 15, offTime_min: 45 });
+    // P_eff = 45000 * sqrt(15 / 60) = 22500 W
+    expect(res).toBe(22500);
   });
 
   it('should verify DR-014: Service Life Hours', () => {
@@ -87,9 +87,9 @@ describe('Phase 1 Derivation Rules Formula Accuracy', () => {
 
   it('should verify DR-015: Efficiency Corrected Torque', () => {
     const rule = derivationRules.find(r => r.id === 'DR-015')!;
-    const res = rule.formula({ powerKW: 15, efficiency: 0.94, outputRPM: 20 });
-    // T = (15 * 0.94 * 9549.3) / 20 = 6732.2565 Nm
-    expect(res).toBeCloseTo(6732.26, 2);
+    const res = rule.formula({ powerW: 15000, efficiency: 0.94, outputRadS: 20 * 2 * Math.PI / 60 });
+    // T = (15000 * 0.94) / (20 * 2 * pi / 60) = 14100 / 2.094395 = 6732.2565 Nm
+    expect(res).toBeCloseTo(6732.25, 2);
   });
 });
 
@@ -102,27 +102,27 @@ describe('Topological Dependency Resolution Engine', () => {
     };
 
     const res = MissingParameterResolutionEngine.resolve(known);
-    // Should resolve outputRPM (DR-001) and outputTorqueNm (DR-005)
-    expect(res.derivedParameters.outputRPM).toBeCloseTo(59.683, 2);
+    // Should resolve outputRadS (DR-001) and outputTorqueNm (DR-005)
+    expect(res.derivedParameters.outputRadS).toBeCloseTo(6.25, 2);
     expect(res.derivedParameters.outputTorqueNm).toBe(4800);
     expect(res.traces).toHaveLength(3);
     expect(res.traces.some(t => t.ruleId === 'DR-001')).toBe(true);
     expect(res.traces.some(t => t.ruleId === 'DR-005')).toBe(true);
     expect(res.traces.some(t => t.ruleId === 'DR-024')).toBe(true);
-    expect(res.derivedParameters.powerKW).toBe(30);
+    expect(res.derivedParameters.powerW).toBe(30000);
   });
 
   it('should NEVER overwrite user provided parameters', () => {
     const known = {
       beltSpeed_m_s: 2.5,
       pulleyDiameter_m: 0.8,
-      outputRPM: 120 // User-entered value
+      outputRadS: 12.566 // User-entered value
     };
-    const userKeys = new Set(['outputRPM']);
+    const userKeys = new Set(['outputRadS']);
 
     const res = MissingParameterResolutionEngine.resolve(known, userKeys);
-    // outputRPM should remain 120
-    expect(res.derivedParameters.outputRPM).toBe(120);
+    // outputRadS should remain 12.566
+    expect(res.derivedParameters.outputRadS).toBe(12.566);
     expect(res.traces).toHaveLength(0); // DR-001 should be skipped
     expect(res.skips).toHaveLength(1);
     expect(res.skips[0].ruleId).toBe('DR-001');
@@ -171,24 +171,24 @@ describe('Raw Text Engineering Value Extraction', () => {
 });
 
 describe('Dependency-Based Engineering Reasoning Engine', () => {
-  it('should resolve Output RPM from inputRPM and totalRatio', () => {
+  it('should resolve outputRadS from inputRadS and totalRatio', () => {
     const known = {
-      inputRPM: 1440,
+      inputRadS: 1440 * 2 * Math.PI / 60,
       totalRatio: 60
     };
     const res = MissingParameterResolutionEngine.resolve(known);
-    expect(res.derivedParameters.outputRPM).toBe(24);
+    expect(res.derivedParameters.outputRadS).toBeCloseTo(24 * 2 * Math.PI / 60, 2);
     expect(res.traces.some(t => t.ruleId === 'DR-016')).toBe(true);
   });
 
-  it('should identify multiple alternative missing paths for outputRPM', () => {
+  it('should identify multiple alternative missing paths for outputRadS', () => {
     const known = {
-      inputRPM: 1440
+      inputRadS: 1440 * 2 * Math.PI / 60
     };
     const res = MissingParameterResolutionEngine.resolve(known);
-    // outputRPM should have paths like ['totalRatio'] (since inputRPM is known)
+    // outputRadS should have paths like ['totalRatio'] (since inputRadS is known)
     // and application specific paths like ['beltSpeed_m_s', 'pulleyDiameter_m'], etc.
-    const paths = res.missingInputsForTargets?.['outputRPM'];
+    const paths = res.missingInputsForTargets?.['outputRadS'];
     expect(paths).toBeDefined();
     
     // Check totalRatio path
@@ -200,9 +200,9 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
 
   it('should resolve the 5 mandatory outputs universally', () => {
     const known = {
-      inputRPM: 1500,
-      outputRPM: 13,
-      powerKW: 160
+      inputRadS: 1500 * 2 * Math.PI / 60,
+      outputRadS: 13 * 2 * Math.PI / 60,
+      powerW: 160000
     };
     const res = MissingParameterResolutionEngine.resolve(known);
     // Ratio = 1500 / 13 = 115.38
@@ -210,33 +210,33 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
     // Stages derived from Ratio = 115.38 -> 3 stages
     expect(res.derivedParameters.stages).toBe(3);
     // Core parameters present
-    expect(res.derivedParameters.powerKW).toBe(160);
-    expect(res.derivedParameters.inputRPM).toBe(1500);
+    expect(res.derivedParameters.powerW).toBe(160000);
+    expect(res.derivedParameters.inputRadS).toBeCloseTo(1500 * 2 * Math.PI / 60, 2);
   });
 
   describe('New Derivation Logic Rules', () => {
-    it('should calculate Power = Torque * RPM / 9550 when efficiency is missing', () => {
-      const known = { outputTorqueNm: 9550, outputRPM: 10 };
+    it('should calculate Power = Torque * RadS when efficiency is missing', () => {
+      const known = { outputTorqueNm: 9550, outputRadS: 10 * 2 * Math.PI / 60 };
       const res = MissingParameterResolutionEngine.resolve(known);
-      expect(res.derivedParameters.powerKW).toBeCloseTo(10, 2);
+      expect(res.derivedParameters.powerW).toBeCloseTo(9550 * 10 * 2 * Math.PI / 60, 2);
     });
 
-    it('should calculate Power = Force * Velocity / 1000', () => {
+    it('should calculate Power = Force * Velocity', () => {
       const known = { force_N: 2000, linearSpeed_m_s: 1.5 };
       const res = MissingParameterResolutionEngine.resolve(known);
-      expect(res.derivedParameters.powerKW).toBeCloseTo(3, 2);
+      expect(res.derivedParameters.powerW).toBe(3000);
     });
 
-    it('should calculate Power = Load_kg * 9.80665 * Speed_m_s / 1000', () => {
+    it('should calculate Power = Load_kg * 9.80665 * Speed_m_s', () => {
       const known = { load_kg: 100, linearSpeed_m_s: 2 };
       const res = MissingParameterResolutionEngine.resolve(known);
-      expect(res.derivedParameters.powerKW).toBeCloseTo(1.96133, 3);
+      expect(res.derivedParameters.powerW).toBeCloseTo(1961.33, 2);
     });
 
-    it('should calculate Torque = 9550 * Power / RPM when efficiency is missing', () => {
-      const known = { powerKW: 10, outputRPM: 10 };
+    it('should calculate Torque = Power / RadS when efficiency is missing', () => {
+      const known = { powerW: 10000, outputRadS: 10 * 2 * Math.PI / 60 };
       const res = MissingParameterResolutionEngine.resolve(known);
-      expect(res.derivedParameters.outputTorqueNm).toBeCloseTo(9550, 2);
+      expect(res.derivedParameters.outputTorqueNm).toBeCloseTo(10000 / (10 * 2 * Math.PI / 60), 2);
     });
 
     it('should calculate Torque = Tangential Load * Radius', () => {
@@ -357,13 +357,13 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
       expect(report.totalRatio.value).toBeCloseTo(125, 2);
     });
 
-    it('should derive output RPM from power and torque using DR-RPM-002', () => {
+    it('should derive outputRadS from power and torque using DR-RPM-002', () => {
       const res = MissingParameterResolutionEngine.resolve({
-        powerKW: 10,
+        powerW: 10000,
         outputTorqueNm: 955
       });
-      // RPM = 9550 * 10 / 955 = 100
-      expect(res.derivedParameters.outputRPM).toBeCloseTo(100, 2);
+      // RadS = 10000 / 955 = 10.47
+      expect(res.derivedParameters.outputRadS).toBeCloseTo(10.47, 2);
     });
 
     it('should derive Design Torque from output torque and service factor using DR-TORQUE-006', () => {
@@ -522,7 +522,7 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
         // Derived from 4 poles, 50 Hz actual speed: sync = 1500, with slip = 1450.5
         expect(report.inputRPM.value).toBeCloseTo(1450.5, 1);
         expect(report.inputRPM.type).toBe('ENGINE_RULE');
-        expect(report.inputRPM.confidence).toBe('Medium');
+        expect(report.inputRPM.confidence).toBe('High');
       });
 
       it('should treat missing Input RPM as Unknown/null and log as Assumption (Priority 3 & 4)', () => {
@@ -566,6 +566,230 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
         expect(report.inputRPM.value).toBe(1480);
         expect(report.outputRPM.value).toBe(12);
         expect(report.powerKW.value).toBe(110);
+      });
+    });
+
+    describe('Power Resolution Engine Comprehensive Test Suite', () => {
+      it('Test Case 1 - Torque + RPM (P = T * N / 9550)', () => {
+        const report = generateAuditReport(
+          'Output Torque : 5000 Nm\nOutput Speed : 20 RPM',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(10.47, 2);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 2 - Input Torque + Input RPM', () => {
+        const report = generateAuditReport(
+          'Input Torque : 300 Nm\nInput Speed : 1450 RPM',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(45.55, 2);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 3 - Conveyor Pull Method', () => {
+        const report = generateAuditReport(
+          'Belt Pull : 12000 N\nBelt Speed : 1.5 m/s',
+          {}
+        );
+        expect(report.powerKW.value).toBe(18);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 4 - Chain Conveyor', () => {
+        const report = generateAuditReport(
+          'Chain Pull : 15000 N\nChain Speed : 0.8 m/s',
+          {}
+        );
+        expect(report.powerKW.value).toBe(12);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 5 - Hydraulic System', () => {
+        const report = generateAuditReport(
+          'Pressure : 180 bar\nFlow : 250 L/min',
+          {}
+        );
+        expect(report.powerKW.value).toBe(75);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 6 - Hoist / Winch', () => {
+        const report = generateAuditReport(
+          'Load : 5000 kg\nLifting Speed : 10 m/min',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(8.17, 2);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 7 - Electrical Motor', () => {
+        const report = generateAuditReport(
+          'Voltage : 415 V\nCurrent : 195 A\nPower Factor : 0.85\nEfficiency : 0.93',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(110.80, 1);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 8 - Planetary Gearbox', () => {
+        const report = generateAuditReport(
+          'Output Torque : 87500 Nm\nOutput Speed : 12 RPM',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(110.0, 0);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 9 - Bucket Elevator', () => {
+        const report = generateAuditReport(
+          'Capacity : 120 TPH\nLift Height : 25 m\nEfficiency : 85%',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(9.6, 1);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('Test Case 10 - Screw Conveyor', () => {
+        const report = generateAuditReport(
+          'Capacity : 20 TPH\nLength : 18 m\nMaterial : Fly Ash',
+          {}
+        );
+        expect(report.powerKW.value).toBeNull();
+      });
+
+      it('Bonus Test (Range Resolution)', () => {
+        const report = generateAuditReport(
+          'Torque : 5000 Nm\nRPM : 20\nPower : 5-20 kW',
+          {}
+        );
+        expect(report.powerKW.value).toBeCloseTo(10.47, 2);
+        expect(report.powerKW.type).toBe('CALCULATED');
+      });
+
+      it('should parse output speed correctly from mathematical expression', () => {
+        const report = generateAuditReport(
+          'Output Torque = 87500 Nm\nOutput Speed = 1450 / 123 = 11.79 RPM\nGearbox Ratio = 123:1\nMotor Speed = 1450 RPM',
+          {}
+        );
+        expect(report.outputRPM.value).toBe(11.79);
+        expect(report.powerKW.value).toBeCloseTo(108.02, 1);
+      });
+
+      describe('Sizing Calculation Completeness and Symmetrical Resolve Tests', () => {
+        it('should resolve single missing variable (powerKW)', () => {
+          const report = generateAuditReport(
+            'Motor speed 1450 RPM, Ratio 80:1, Output Torque 39517.24 Nm, Efficiency 100%',
+            {}
+          );
+          expect(report.powerKW.value).toBeCloseTo(75, 0);
+          expect(report.outputRPM.value).toBeCloseTo(18.125, 2);
+        });
+
+        it('should resolve dual missing variables (Ratio and Output RPM) with high/medium/low confidence', () => {
+          const report1 = generateAuditReport(
+            'Input speed 1450 RPM, Input Torque 500 Nm, Output Torque 38800 Nm, Efficiency 97%',
+            {}
+          );
+          expect(report1.totalRatio.value).toBeCloseTo(80, 0);
+          expect(report1.outputRPM.value).toBeCloseTo(18.125, 2);
+          expect(report1.totalRatio.confidence).toBe('High');
+
+          const report2 = generateAuditReport(
+            'Input speed 1450 RPM, Input Torque 500 Nm, Output Torque 38800 Nm',
+            {}
+          );
+          expect(report2.totalRatio.value).toBeCloseTo(80, 0);
+          expect(report2.totalRatio.confidence).toBe('Medium');
+          expect(report2.totalRatio.type).toBe('ASSUMED_VALUE');
+        });
+
+        it('should resolve triple missing variables (Power, Ratio, Output RPM)', () => {
+          const report = generateAuditReport(
+            'Input speed 1450 RPM, Input Torque 493.8 Nm, Output Torque 38320 Nm',
+            {}
+          );
+          expect(report.powerKW.value).toBeCloseTo(75, 0);
+          expect(report.totalRatio.value).toBeCloseTo(80, 0);
+          expect(report.outputRPM.value).toBeCloseTo(18.125, 1);
+        });
+
+        it('should debug user Agitator RFQ parsing', () => {
+          const rawText = `Input
+Application: Agitator
+
+Power: 22 kW
+Input RPM: 1450 RPM
+Output Torque: 4890 Nm`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.powerKW.value).toBe(22);
+          expect(report.inputRPM.value).toBe(1450);
+          expect(report.outputRPM.value).toBeCloseTo(42.96, 1);
+          expect(report.totalRatio.value).toBeCloseTo(33.74, 1);
+          expect(report.stages.value).toBe(2);
+        });
+
+        it('should handle Test Case 1 - Simple RPS', () => {
+          const rawText = `Input\nApplication: Conveyor\n\nInput Speed: 24 RPS\nPower: 22 kW`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.inputRPM.value).toBeCloseTo(1440, 1);
+        });
+
+        it('should handle Test Case 2 - Decimal RPS', () => {
+          const rawText = `Input\nApplication: Agitator\n\nInput Speed: 24.17 RPS\nPower: 30 kW`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.inputRPM.value).toBeCloseTo(1450.2, 1);
+        });
+
+        it('should handle Test Case 3 - Standard Motor Verification', () => {
+          const rawText = `Input\nApplication: Mixer\n\nInput Speed: 16.11 RPS`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.inputRPM.value).toBeCloseTo(966.6, 1);
+          expect(report.motorPoles.value).toBe(6);
+        });
+
+        it('should handle Test Case 4 - High Speed Motor', () => {
+          const rawText = `Input\nApplication: Pump\n\nInput Speed: 48.33 RPS`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.inputRPM.value).toBeCloseTo(2899.8, 1);
+          expect(report.motorPoles.value).toBe(2);
+        });
+
+        it('should handle Test Case 5 - RPS + Ratio', () => {
+          const rawText = `Input\nApplication: Conveyor\n\nInput Speed: 24 RPS\n\nRatio: 60:1`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.inputRPM.value).toBeCloseTo(1440, 1);
+          expect(report.outputRPM.value).toBeCloseTo(24, 1);
+        });
+
+        it('should handle Test Case 6 - RPS + Output Torque', () => {
+          const rawText = `Input\nApplication: Agitator\n\nPower: 22 kW\n\nInput Speed: 24.17 RPS\n\nOutput Torque: 4890 Nm`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.inputRPM.value).toBeCloseTo(1450.2, 1);
+          expect(report.totalRatio.value).toBeCloseTo(33.7, 0);
+          expect(report.outputRPM.value).toBeCloseTo(43, 0);
+        });
+
+        it('should handle Test Case 7 - Ambiguous Unit Detection', () => {
+          const rawText = `Input\nApplication: Conveyor\n\nSpeed: 24`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.applicationKnowledge!.isBlocked).toBe(true);
+          expect(report.applicationKnowledge!.clarificationQuestions).toContain('Clarification Required');
+          expect(report.applicationKnowledge!.clarificationQuestions).toContain('24 RPM?');
+          expect(report.applicationKnowledge!.clarificationQuestions).toContain('24 RPS?');
+          expect(report.applicationKnowledge!.clarificationQuestions).toContain('24 rad/s?');
+        });
+
+        it('should handle Killer RPS Test', () => {
+          const rawText = `Input\nApplication: Agitator\n\nPower: 25 HP\n\nInput Speed: 24.17 RPS\n\nOutput Torque: 450 kgf·m`;
+          const report = generateAuditReport(rawText, {});
+          expect(report.powerKW.value).toBeCloseTo(18.64, 1);
+          expect(report.inputRPM.value).toBeCloseTo(1450.2, 1);
+          expect(report.extractedEngineeringParams!.outputTorqueNm?.value).toBeCloseTo(4413, 0);
+          expect(report.totalRatio.value).toBeCloseTo(36, 0);
+          expect(report.outputRPM.value).toBeCloseTo(40, 0);
+        });
       });
     });
   });

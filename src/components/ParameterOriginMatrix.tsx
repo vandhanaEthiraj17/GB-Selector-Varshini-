@@ -12,7 +12,7 @@ interface ParameterOriginMatrixProps {
   report: EngineeringReport;
 }
 
-type ParameterType = 'EXTRACTED' | 'CALCULATED' | 'DERIVED' | 'SUGGESTED' | 'ASSUMED' | 'ENGINE_RULE';
+type ParameterType = 'EXTRACTED' | 'CALCULATED' | 'DERIVED' | 'SUGGESTED' | 'ASSUMED' | 'ENGINE_RULE' | 'ASSUMED_VALUE';
 
 const TYPE_CONFIG: Record<ParameterType, {
   label: string;
@@ -62,6 +62,13 @@ const TYPE_CONFIG: Record<ParameterType, {
     dotCls: 'bg-slate-400',
     icon: <HelpCircle className="h-3 w-3" />,
     desc: 'Assumed — verify required'
+  },
+  ASSUMED_VALUE: {
+    label: 'Assumed Value',
+    badgeCls: 'bg-slate-100 text-slate-500 border-slate-200',
+    dotCls: 'bg-slate-400',
+    icon: <HelpCircle className="h-3 w-3" />,
+    desc: 'Default value assumption'
   }
 };
 

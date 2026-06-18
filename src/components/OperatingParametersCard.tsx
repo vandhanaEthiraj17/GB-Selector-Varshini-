@@ -16,9 +16,16 @@ export const OperatingParametersCard: React.FC<OperatingParametersCardProps> = (
 }) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value, type } = e.target;
-    onChange({
-      [id]: type === 'number' ? (value === '' ? '' : parseFloat(value)) : value
-    });
+    const numVal = value === '' ? '' : parseFloat(value);
+    if (id === 'powerKW') {
+      onChange({ powerW: numVal === '' ? '' : numVal * 1000 });
+    } else if (id === 'inputRPM') {
+      onChange({ inputRadS: numVal === '' ? '' : numVal * 2 * Math.PI / 60 });
+    } else {
+      onChange({
+        [id]: type === 'number' ? numVal : value
+      });
+    }
   };
 
   return (
@@ -73,7 +80,7 @@ export const OperatingParametersCard: React.FC<OperatingParametersCardProps> = (
             min="0.1"
             step="0.1"
             placeholder="Input drive power in kilowatts"
-            value={values.powerKW}
+            value={values.powerW === '' || values.powerW === undefined ? '' : values.powerW / 1000}
             onChange={handleChange}
             className="bg-slate-50/30 border-slate-200 focus-visible:ring-2 focus-visible:ring-[#ff8c00]/20 focus-visible:border-[#ff8c00] rounded-xl transition-all duration-200 text-sm py-2 h-9"
           />
@@ -89,7 +96,7 @@ export const OperatingParametersCard: React.FC<OperatingParametersCardProps> = (
             type="number"
             min="1"
             placeholder="Motor shaft speed in RPM"
-            value={values.inputRPM}
+            value={values.inputRadS === '' || values.inputRadS === undefined ? '' : Math.round(values.inputRadS * 60 / (2 * Math.PI) * 100) / 100}
             onChange={handleChange}
             className="bg-slate-50/30 border-slate-200 focus-visible:ring-2 focus-visible:ring-[#ff8c00]/20 focus-visible:border-[#ff8c00] rounded-xl transition-all duration-200 text-sm py-2 h-9"
           />

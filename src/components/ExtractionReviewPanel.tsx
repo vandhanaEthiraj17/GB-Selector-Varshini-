@@ -211,8 +211,8 @@ export const ExtractionReviewPanel: React.FC<ExtractionReviewPanelProps> = ({
 
   const handleApply = () => {
     const result: Partial<ProjectInput> = {};
-    if (overrides.powerKW) result.powerKW = parseFloat(overrides.powerKW);
-    if (overrides.inputRPM) result.inputRPM = parseFloat(overrides.inputRPM);
+    if (overrides.powerKW) result.powerW = parseFloat(overrides.powerKW) * 1000;
+    if (overrides.inputRPM) result.inputRadS = parseFloat(overrides.inputRPM) * 2 * Math.PI / 60;
     if (overrides.totalRatio) result.totalRatio = parseFloat(overrides.totalRatio);
     if (overrides.serviceFactor) result.serviceFactor = parseFloat(overrides.serviceFactor);
     if (overrides.stages) result.stages = parseInt(overrides.stages, 10);

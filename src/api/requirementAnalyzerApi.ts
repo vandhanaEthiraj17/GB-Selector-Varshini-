@@ -1,9 +1,11 @@
 export interface ExtractionResult {
   projectName: string | null;
-  powerKW: number | null;
-  inputRPM: number | null;
-  outputRPM: number | null;
+  powerW: number | null;
+  inputRadS: number | null;
+  outputRadS: number | null;
   targetRatio: number | null;
+  outputTorqueNm?: number | null;
+  inputTorqueNm?: number | null;
   applicationType: string | null;
   serviceFactor: number | null;
   numberOfStages: number | null;

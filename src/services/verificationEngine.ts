@@ -99,8 +99,11 @@ export function verifyDatabaseIntegrity(): { critical: string[]; warnings: strin
 export interface RawExtractedParameters {
   projectName?: string | null;
   powerKW?: number | null;
+  powerW?: number | null;
   inputRPM?: number | null;
+  inputRadS?: number | null;
   outputRPM?: number | null;
+  outputRadS?: number | null;
   targetRatio?: number | null;
   applicationType?: string | null;
   serviceFactor?: number | null;
@@ -147,18 +150,23 @@ export function verifyEngineeringReport(report: EngineeringReport, rawExtracted?
     return passed;
   };
 
+  // Support both legacy and SI input parameters
+  const powerVal = rawExtracted ? (rawExtracted.powerKW !== undefined && rawExtracted.powerKW !== null ? rawExtracted.powerKW : (rawExtracted.powerW ? rawExtracted.powerW / 1000 : null)) : null;
+  const inputRPMVal = rawExtracted ? (rawExtracted.inputRPM !== undefined && rawExtracted.inputRPM !== null ? rawExtracted.inputRPM : (rawExtracted.inputRadS ? rawExtracted.inputRadS * 60 / (2 * Math.PI) : null)) : null;
+  const outputRPMVal = rawExtracted ? (rawExtracted.outputRPM !== undefined && rawExtracted.outputRPM !== null ? rawExtracted.outputRPM : (rawExtracted.outputRadS ? rawExtracted.outputRadS * 60 / (2 * Math.PI) : null)) : null;
+
   // --- 1. EXTRACT INFOS & MISSING INPUTS FROM RAW EXTRACTION ---
-  const hasExtractedPower = rawExtracted && rawExtracted.powerKW !== null && rawExtracted.powerKW !== undefined && rawExtracted.powerKW > 0;
-  const hasExtractedInputRPM = rawExtracted && rawExtracted.inputRPM !== null && rawExtracted.inputRPM !== undefined && rawExtracted.inputRPM > 0;
-  const hasExtractedOutputRPM = rawExtracted && rawExtracted.outputRPM !== null && rawExtracted.outputRPM !== undefined && rawExtracted.outputRPM > 0;
+  const hasExtractedPower = powerVal !== null && powerVal !== undefined && powerVal > 0;
+  const hasExtractedInputRPM = inputRPMVal !== null && inputRPMVal !== undefined && inputRPMVal > 0;
+  const hasExtractedOutputRPM = outputRPMVal !== null && outputRPMVal !== undefined && outputRPMVal > 0;
   const hasExtractedRatio = rawExtracted && rawExtracted.targetRatio !== null && rawExtracted.targetRatio !== undefined && rawExtracted.targetRatio > 0;
   const hasExtractedApp = rawExtracted && rawExtracted.applicationType !== null && rawExtracted.applicationType !== undefined && rawExtracted.applicationType.trim() !== '';
   const hasExtractedSF = rawExtracted && rawExtracted.serviceFactor !== null && rawExtracted.serviceFactor !== undefined && rawExtracted.serviceFactor > 0;
 
   // Log AI Extractions as INFO
-  if (hasExtractedPower) infos.push(`AI Extracted: Power = ${rawExtracted.powerKW} kW`);
-  if (hasExtractedInputRPM) infos.push(`AI Extracted: Input Speed = ${rawExtracted.inputRPM} RPM`);
-  if (hasExtractedOutputRPM) infos.push(`AI Extracted: Output Speed = ${rawExtracted.outputRPM} RPM`);
+  if (hasExtractedPower) infos.push(`AI Extracted: Power = ${powerVal} kW`);
+  if (hasExtractedInputRPM) infos.push(`AI Extracted: Input Speed = ${inputRPMVal} RPM`);
+  if (hasExtractedOutputRPM) infos.push(`AI Extracted: Output Speed = ${outputRPMVal} RPM`);
   if (hasExtractedRatio) infos.push(`AI Extracted: Target Gear Ratio = ${rawExtracted.targetRatio}:1`);
   if (hasExtractedApp) infos.push(`AI Extracted: Application Type = "${rawExtracted.applicationType}"`);
   if (hasExtractedSF) infos.push(`AI Extracted: Service Factor = ${rawExtracted.serviceFactor}`);
@@ -189,10 +197,10 @@ export function verifyEngineeringReport(report: EngineeringReport, rawExtracted?
       missingInputs.push(nameMap[p] || p);
     });
   } else {
-    if (!rawExtracted || rawExtracted.powerKW === null || rawExtracted.powerKW === undefined) {
+    if (!rawExtracted || powerVal === null || powerVal === undefined) {
       missingInputs.push('Power Rating');
     }
-    if (!rawExtracted || rawExtracted.inputRPM === null || rawExtracted.inputRPM === undefined) {
+    if (!rawExtracted || inputRPMVal === null || inputRPMVal === undefined) {
       if (rawExtracted && rawExtracted.motorPoles !== null && rawExtracted.motorPoles !== undefined) {
         // Speed derived, not missing
       } else {
@@ -309,8 +317,13 @@ export function verifyEngineeringReport(report: EngineeringReport, rawExtracted?
       const rule = derivationRules.find(r => r.id === trace.ruleId);
       if (rule) {
         try {
-          const recomputed = rule.formula(trace.inputsUsed);
+          let recomputed = rule.formula(trace.inputsUsed);
           if (recomputed !== null && recomputed !== undefined) {
+            if (trace.outputProduced.startsWith('powerKW')) {
+              recomputed = recomputed / 1000;
+            } else if (trace.outputProduced.startsWith('inputRPM') || trace.outputProduced.startsWith('outputRPM')) {
+              recomputed = recomputed * 60 / (2 * Math.PI);
+            }
             auditVal(`${trace.ruleName} (${trace.ruleId})`, trace.value, recomputed);
           }
         } catch {

@@ -14,12 +14,12 @@ export async function calculateGearboxOptions(
 ): Promise<CalculationResult[]> {
   const reqRatio = Number(input.totalRatio);
   const stages = input.stages;
-  const power = Number(input.powerKW);
-  const rpm = Number(input.inputRPM);
+  const power = Number(input.powerW);
+  const speedRadS = Number(input.inputRadS);
   const sf = Number(input.serviceFactor);
   const stageSeries = input.stageSeries;
 
-  if (!reqRatio || !stages || !power || !rpm || !sf || !stageSeries || stageSeries.length < stages) {
+  if (!reqRatio || !stages || !power || !speedRadS || !sf || !stageSeries || stageSeries.length < stages) {
     throw new Error("Invalid parameters provided for calculations.");
   }
 
@@ -39,8 +39,8 @@ export async function calculateGearboxOptions(
   function generateCombinations(stageIndex: number, currentRatios: number[], currentTotalRatio: number) {
     if (stageIndex === stages) {
       const deviation = ((currentTotalRatio - reqRatio) / reqRatio) * 100;
-      // nominal output torque at final stage: (P * 60,000 * totalRatio * 0.97^stages) / (2 * pi * inputRPM)
-      const nominal = (power * 60000 * currentTotalRatio * Math.pow(0.97, stages)) / (2 * Math.PI * rpm);
+      // nominal output torque at final stage: (P * totalRatio * 0.97^stages) / inputRadS
+      const nominal = (power * currentTotalRatio * Math.pow(0.97, stages)) / speedRadS;
       const max = nominal * sf;
       permutations.push({
         ratios: currentRatios,
@@ -94,13 +94,13 @@ export async function getStageDetails(
   input: ProjectInput,
   result: CalculationResult
 ): Promise<StageDetail[]> {
-  const initialRPM = Number(input.inputRPM);
-  const power = Number(input.powerKW);
+  const initialRadS = Number(input.inputRadS);
+  const power = Number(input.powerW);
   const sf = Number(input.serviceFactor);
   const stageSeries = input.stageSeries;
   
-  let speed = initialRPM;
-  let torque = (power * 60000) / (2 * Math.PI * speed);
+  let speed = initialRadS;
+  let torque = power / speed;
 
   const stageDetails: StageDetail[] = [];
 

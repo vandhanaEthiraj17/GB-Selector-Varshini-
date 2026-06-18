@@ -192,10 +192,12 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
         console.warn("AI extraction endpoint failed, timed out, or unavailable. Falling back to local rules engine...", apiError);
         result = {
           projectName: 'Local Engine Resolution',
-          powerKW: null,
-          inputRPM: null,
-          outputRPM: null,
+          powerW: null,
+          inputRadS: null,
+          outputRadS: null,
           targetRatio: null,
+          outputTorqueNm: null,
+          inputTorqueNm: null,
           applicationType: null,
           serviceFactor: null,
           numberOfStages: null
@@ -247,10 +249,10 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
       };
       
       if (reasoningResult.powerKW.value !== null && reasoningResult.powerKW.value !== undefined && !isNaN(reasoningResult.powerKW.value)) {
-        valuesToFill.powerKW = reasoningResult.powerKW.value;
+        valuesToFill.powerW = reasoningResult.powerKW.value * 1000;
       }
       if (reasoningResult.inputRPM.value !== null && reasoningResult.inputRPM.value !== undefined && !isNaN(reasoningResult.inputRPM.value)) {
-        valuesToFill.inputRPM = reasoningResult.inputRPM.value;
+        valuesToFill.inputRadS = reasoningResult.inputRPM.value * 2 * Math.PI / 60;
       }
       if (reasoningResult.totalRatio.value !== null && reasoningResult.totalRatio.value !== undefined && !isNaN(reasoningResult.totalRatio.value)) {
         valuesToFill.totalRatio = reasoningResult.totalRatio.value;
@@ -1076,11 +1078,11 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                       p.name.includes('Ratio') 
                                         ? `${p.value!.toFixed(2)}:1`
                                         : p.name.includes('Speed') || p.name.includes('RPM')
-                                        ? `${Math.round(p.value!)} RPM`
+                                        ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} RPM`
                                         : p.name.includes('Power')
-                                        ? `${p.value!} kW`
+                                        ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} kW`
                                         : p.name.includes('HP')
-                                        ? `${p.value!} HP`
+                                        ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} HP`
                                         : p.value
                                     )}
                                   </td>

@@ -8,8 +8,8 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
   // Simulate network latency
   await new Promise(resolve => setTimeout(resolve, 800));
 
-  let powerKW: number | undefined;
-  let inputRPM: number | undefined;
+  let powerW: number | undefined;
+  let inputRadS: number | undefined;
   let totalRatio: number | undefined;
   let stages: number | undefined;
   let serviceFactor: number | undefined;
@@ -17,25 +17,30 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
   // 1. Extract Power in kW
   const powerMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:kW|kilowatt|kilowatts)/i);
   if (powerMatch) {
-    powerKW = parseFloat(powerMatch[1]);
+    powerW = parseFloat(powerMatch[1]) * 1000;
   }
 
   // 2. Extract Input Speed in RPM
+  let extractedInputRPM: number | undefined;
   const inputSpeedMatch = text.match(/(?:input|motor|inlet)\s+speed\s+(?:is\s+)?(\d+(?:\.\d+)?)\s*RPM/i);
   const rpmMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*RPM/gi)];
   
   if (inputSpeedMatch) {
-    inputRPM = parseFloat(inputSpeedMatch[1]);
+    extractedInputRPM = parseFloat(inputSpeedMatch[1]);
   } else if (rpmMatches.length > 0) {
-    inputRPM = parseFloat(rpmMatches[0][1]);
+    extractedInputRPM = parseFloat(rpmMatches[0][1]);
+  }
+
+  if (extractedInputRPM) {
+    inputRadS = extractedInputRPM * (2 * Math.PI) / 60;
   }
 
   // 3. Extract Output Speed / Ratio
   const outputSpeedMatch = text.match(/(?:output|target|final|required|conveyor)\s+speed\s+(?:is\s+)?(\d+(?:\.\d+)?)\s*RPM/i);
-  if (outputSpeedMatch && inputRPM) {
+  if (outputSpeedMatch && extractedInputRPM) {
     const outRPM = parseFloat(outputSpeedMatch[1]);
     if (outRPM > 0) {
-      totalRatio = parseFloat((inputRPM / outRPM).toFixed(2));
+      totalRatio = parseFloat((extractedInputRPM / outRPM).toFixed(2));
     }
   } else {
     // Check for direct ratio mention like "ratio of 50" or "gear ratio is 45" or "10 : 1"
@@ -80,8 +85,8 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
   // Return extracted values without setting fallbacks if they could not be identified
   return {
     projectName: "AI Analysis: " + (text.split(/[.!?]/)[0]?.substring(0, 30) || "Extracted"),
-    powerKW,
-    inputRPM,
+    powerW,
+    inputRadS,
     totalRatio,
     stages,
     serviceFactor,

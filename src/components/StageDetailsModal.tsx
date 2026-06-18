@@ -90,8 +90,16 @@ export const StageDetailsModal: React.FC<StageDetailsModalProps> = ({
                 <div className="flex items-center justify-start md:justify-center gap-4 py-2 overflow-x-auto flex-nowrap pb-3">
                   <div className="flex flex-col items-center bg-white border border-slate-200 px-3.5 py-2 rounded-lg shadow-sm text-center min-w-[100px] shrink-0">
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Input Motor</span>
-                    <span className="text-sm font-black text-slate-700 mt-1">{inputValues?.inputRPM} RPM</span>
-                    <span className="text-[10px] font-bold text-[#ff8c00] mt-0.5">{inputValues?.powerKW} kW</span>
+                    <span className="text-sm font-black text-slate-700 mt-1">
+                      {inputValues?.inputRadS !== undefined && inputValues?.inputRadS !== '' 
+                        ? Math.round(inputValues.inputRadS * 60 / (2 * Math.PI)) 
+                        : ''} RPM
+                    </span>
+                    <span className="text-[10px] font-bold text-[#ff8c00] mt-0.5">
+                      {inputValues?.powerW !== undefined && inputValues?.powerW !== '' 
+                        ? (inputValues.powerW / 1000).toFixed(1) 
+                        : ''} kW
+                    </span>
                   </div>
 
                   {details.map((d, idx) => (

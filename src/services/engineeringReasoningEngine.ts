@@ -1,4 +1,4 @@
-import { Gearbox } from '../types/Gearbox';
+import { Gearbox, GearboxInput } from '../types/Gearbox';
 import { gearboxDatabase } from '../data/gearboxDatabase';
 import {
   PowerTorqueEngine,
@@ -25,7 +25,7 @@ interface RangeValue {
   raw: string;
 }
 
-function extractRange(text: string, type: 'input' | 'output' | 'ratio'): RangeValue | null {
+function extractRange(text: string, type: 'input' | 'output' | 'ratio' | 'power'): RangeValue | null {
   let patterns: RegExp[] = [];
   if (type === 'input') {
     patterns = [
@@ -39,6 +39,10 @@ function extractRange(text: string, type: 'input' | 'output' | 'ratio'): RangeVa
     patterns = [
       /(?:gear\s+)?ratio\s*[:=\s]\s*(\d+(?:\.\d+)?)\s*[-–—\s]+\s*(\d+(?:\.\d+)?)/i,
       /(\d+(?:\.\d+)?)\s*[-–—\s]+\s*(\d+(?:\.\d+)?)\s*:\s*1/i
+    ];
+  } else if (type === 'power') {
+    patterns = [
+      /(?:motor\s+power|installed\s+power|\bpower\b)\s*[:=\s]\s*(\d+(?:\.\d+)?)\s*[-–—\s]+\s*(\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor)?/i
     ];
   }
 
@@ -56,7 +60,7 @@ function extractRange(text: string, type: 'input' | 'output' | 'ratio'): RangeVa
 }
 
 // Type Classification for parameters
-export type ParameterType = 'EXTRACTED' | 'CALCULATED' | 'DERIVED' | 'SUGGESTED' | 'ASSUMED' | 'ENGINE_RULE';
+export type ParameterType = 'EXTRACTED' | 'CALCULATED' | 'DERIVED' | 'SUGGESTED' | 'ASSUMED' | 'ENGINE_RULE' | 'ASSUMED_VALUE';
 export type ConfidenceLevel = 'High' | 'Medium' | 'Low';
 export type ValidationStatus = '✓ Valid' | '⚠ Missing' | '❌ Invalid';
 
@@ -335,6 +339,10 @@ export function validateInputs(
 }
 
 export function preprocessTextRanges(text: string): string {
+  // Simplify mathematical derivations like "1450 / 123 = 11.79" or "(5000 * 20) / 9550 = 10.47" to just the result
+  text = text.replace(/(?:\(?\d+(?:\.\d+)?\)?\s*[\/*+x×()\s-]\s*)+\d+(?:\.\d+)?\s*=\s*(\d+(?:\.\d+)?)/g, '$1');
+  // Strip thousands separator commas from numbers
+  text = text.replace(/(\d),(\d{3}(?!\d))/g, '$1$2');
   // Convert any RPH ranges or values to RPM
   text = text.replace(/(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(?:RPH|rph)/gi, (_match, minStr, maxStr) => {
     const min = parseFloat(minStr) / 60;
@@ -346,14 +354,18 @@ export function preprocessTextRanges(text: string): string {
     return `${val.toFixed(6)} RPM`;
   });
 
-  // Resolve Power ranges (HP or kW)
-  text = text.replace(/(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(?:HP|hp|horsepower|horse-power|kW|kilowatt|kilowatts)/gi, (match, minStr, maxStr) => {
-    const min = parseFloat(minStr);
-    const max = parseFloat(maxStr);
-    const resolved = min + (max - min) / 3;
-    const unit = match.match(/(?:HP|hp|horsepower|horse-power|kW|kilowatt|kilowatts)/i)?.[0] || '';
-    return `${resolved.toFixed(4)} ${unit}`;
-  });
+  // Resolve Power ranges (HP or kW) unless we can derive it from torque/load and speed
+  const hasTorqueOrForce = /torque|pull|tension|load/i.test(text);
+  const hasSpeedOrRPM = /speed|rpm|velocity/i.test(text);
+  if (!(hasTorqueOrForce && hasSpeedOrRPM)) {
+    text = text.replace(/(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(?:HP|hp|horsepower|horse-power|kW|kilowatt|kilowatts)/gi, (match, minStr, maxStr) => {
+      const min = parseFloat(minStr);
+      const max = parseFloat(maxStr);
+      const resolved = min + (max - min) / 3;
+      const unit = match.match(/(?:HP|hp|horsepower|horse-power|kW|kilowatt|kilowatts)/i)?.[0] || '';
+      return `${resolved.toFixed(4)} ${unit}`;
+    });
+  }
 
   // Resolve Torque ranges (kgf.m or Nm)
   text = text.replace(/(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(?:kgf?[·\-\.]?m|kg[·\-\.]?m|N[·\-\.]?m|Newton[ \-]?meters?)/gi, (match, minStr, maxStr) => {
@@ -379,8 +391,11 @@ export function generateAuditReport(
   rawText: string,
   extracted: {
     projectName?: string | null;
+    powerW?: number | null;
     powerKW?: number | null;
+    inputRadS?: number | null;
     inputRPM?: number | null;
+    outputRadS?: number | null;
     outputRPM?: number | null;
     targetRatio?: number | null;
     applicationType?: string | null;
@@ -394,15 +409,51 @@ export function generateAuditReport(
     environment?: string | null;
     gearboxPreferences?: string | null;
     serviceFactorCondition?: string | null;
+    outputTorqueNm?: number | null;
+    inputTorqueNm?: number | null;
   }
 ): EngineeringReport {
   rawText = preprocessTextRanges(rawText);
   const normText = rawText.toLowerCase();
   const assumptions: { parameter: string; assumption: string; reason: string }[] = [];
+
+  // Map legacy keys to SI
+  if (extracted.powerW === undefined || extracted.powerW === null) {
+    if (extracted.powerKW !== undefined && extracted.powerKW !== null) {
+      extracted.powerW = extracted.powerKW * 1000;
+    }
+  }
+  if (extracted.inputRadS === undefined || extracted.inputRadS === null) {
+    if (extracted.inputRPM !== undefined && extracted.inputRPM !== null) {
+      extracted.inputRadS = extracted.inputRPM * 2 * Math.PI / 60;
+    }
+  }
+  if (extracted.outputRadS === undefined || extracted.outputRadS === null) {
+    if (extracted.outputRPM !== undefined && extracted.outputRPM !== null) {
+      extracted.outputRadS = extracted.outputRPM * 2 * Math.PI / 60;
+    }
+  }
+
   const localExtracted = ParameterExtractionEngine.extract(rawText);
 
+  // Convert incoming SI parameter options to display units if needed for internal display-unit logic
+  const extPowerKW = extracted.powerW ? extracted.powerW / 1000 : null;
+  const extInputRPM = extracted.inputRadS ? extracted.inputRadS * 60 / (2 * Math.PI) : null;
+  const extOutputRPM = extracted.outputRadS ? extracted.outputRadS * 60 / (2 * Math.PI) : null;
+
+  const localExtPowerKW = localExtracted.powerW ? localExtracted.powerW / 1000 : undefined;
+  const localExtInputRPM = localExtracted.inputRadS ? localExtracted.inputRadS * 60 / (2 * Math.PI) : undefined;
+  const localExtOutputRPM = localExtracted.outputRadS ? localExtracted.outputRadS * 60 / (2 * Math.PI) : undefined;
+  const localExtAmbientTemperatureC = localExtracted.ambientTemperatureK !== undefined ? localExtracted.ambientTemperatureK - 273.15 : undefined;
+
+  let startsPerHour = 4;
+  const startsMatch = rawText.match(/(\d+)\s*(?:starts|start-ups)\s*(?:per\s*hour|\/hr)/i);
+  if (startsMatch) {
+    startsPerHour = parseInt(startsMatch[1], 10);
+  }
+
   // Extract motor HP, poles, and frequency early for upstream dependency resolution
-  let extHP = extracted.motorHP || localExtracted.power_hp;
+  let extHP = extracted.motorHP || localExtracted.powerHP;
   if (extHP === null || extHP === undefined) {
     const hpMatch = rawText.match(/(\d+(?:\.\d+)?)\s*(?:HP|horsepower|horse-power)/i);
     if (hpMatch) {
@@ -410,20 +461,27 @@ export function generateAuditReport(
     }
   }
 
-  let extPoles = extracted.motorPoles;
-  if (extPoles === null || extPoles === undefined) {
-    const polesMatch = rawText.match(/(?:poles?)\s*[:=\s]*\s*(\d+)/i) || rawText.match(/(\d+)\s*(?:poles?|-poles?)/i);
-    if (polesMatch) {
-      extPoles = parseInt(polesMatch[1], 10);
-    }
-  }
-
-  const frequencyHz = localExtracted.frequency_hz || 50;
-
   // ─── DERIVATION ENGINE (Phase 1 upstream parameter enrichment) ───
   const userProvidedKeys = new Set<string>();
   const parserResult = parseInputsWithMetadata(rawText);
   const initialParams = parserResult.values;
+
+  let extPoles = extracted.motorPoles;
+  let deducedPoles = false;
+  if (extPoles === null || extPoles === undefined) {
+    const polesMatch = rawText.match(/(?:poles?)\s*[:=\s]*\s*(\d+)/i) || rawText.match(/(\d+)\s*(?:poles?|-poles?)/i);
+    if (polesMatch) {
+      extPoles = parseInt(polesMatch[1], 10);
+      userProvidedKeys.add('motorPoles');
+    }
+  } else {
+    userProvidedKeys.add('motorPoles');
+  }
+
+  const frequencyHz = localExtracted.frequencyHz || 50;
+  if (localExtracted.frequencyHz !== undefined && localExtracted.frequencyHz > 0) {
+    userProvidedKeys.add('frequencyHz');
+  }
 
   // Populate early extractions into initialParams so they are available in the dependency graph
   if (extHP !== null && extHP !== undefined && extHP > 0) {
@@ -434,60 +492,65 @@ export function generateAuditReport(
   }
   initialParams.frequencyHz = frequencyHz;
 
-  // Map explicitly provided/extracted values to initialParams, and register them as user/handbook provided
-  if (extracted.powerKW !== null && extracted.powerKW !== undefined && extracted.powerKW > 0) {
-    initialParams.powerKW = extracted.powerKW;
-    userProvidedKeys.add('powerKW');
-  } else if (localExtracted.power_kw !== undefined && localExtracted.power_kw > 0) {
-    initialParams.powerKW = localExtracted.power_kw;
-    userProvidedKeys.add('powerKW');
-  } else if (parserResult.values.powerKW !== undefined && parserResult.values.powerKW > 0) {
-    initialParams.powerKW = parserResult.values.powerKW;
-    userProvidedKeys.add('powerKW');
+  let powerRange = extractRange(rawText, 'power');
+  if (powerRange) {
+    delete initialParams.powerW;
+    userProvidedKeys.delete('powerW');
+  } else {
+    if (extracted.powerW !== null && extracted.powerW !== undefined && extracted.powerW > 0) {
+      initialParams.powerW = extracted.powerW;
+      userProvidedKeys.add('powerW');
+    } else if (localExtracted.powerW !== undefined && localExtracted.powerW > 0) {
+      initialParams.powerW = localExtracted.powerW;
+      userProvidedKeys.add('powerW');
+    } else if (parserResult.nodes.powerW !== undefined && parserResult.values.powerW > 0) {
+      initialParams.powerW = parserResult.values.powerW;
+      userProvidedKeys.add('powerW');
+    }
   }
 
-  if (extracted.inputRPM !== null && extracted.inputRPM !== undefined && extracted.inputRPM > 0) {
-    initialParams.inputRPM = extracted.inputRPM;
-    userProvidedKeys.add('inputRPM');
-  } else if (localExtracted.input_rpm !== undefined && localExtracted.input_rpm > 0) {
-    initialParams.inputRPM = localExtracted.input_rpm;
-    userProvidedKeys.add('inputRPM');
-  } else if (parserResult.values.inputRPM !== undefined && parserResult.values.inputRPM > 0) {
-    initialParams.inputRPM = parserResult.values.inputRPM;
-    userProvidedKeys.add('inputRPM');
+  if (extracted.inputRadS !== null && extracted.inputRadS !== undefined && extracted.inputRadS > 0) {
+    initialParams.inputRadS = extracted.inputRadS;
+    userProvidedKeys.add('inputRadS');
+  } else if (localExtracted.inputRadS !== undefined && localExtracted.inputRadS > 0) {
+    initialParams.inputRadS = localExtracted.inputRadS;
+    userProvidedKeys.add('inputRadS');
+  } else if (parserResult.nodes.inputRadS !== undefined && parserResult.values.inputRadS > 0) {
+    initialParams.inputRadS = parserResult.values.inputRadS;
+    userProvidedKeys.add('inputRadS');
   }
 
-  if (extracted.outputRPM !== null && extracted.outputRPM !== undefined && extracted.outputRPM > 0) {
-    initialParams.outputRPM = extracted.outputRPM;
-    userProvidedKeys.add('outputRPM');
-  } else if (localExtracted.output_rpm !== undefined && localExtracted.output_rpm > 0) {
-    initialParams.outputRPM = localExtracted.output_rpm;
-    userProvidedKeys.add('outputRPM');
-  } else if (parserResult.values.outputRPM !== undefined && parserResult.values.outputRPM > 0) {
-    initialParams.outputRPM = parserResult.values.outputRPM;
-    userProvidedKeys.add('outputRPM');
+  if (extracted.outputRadS !== null && extracted.outputRadS !== undefined && extracted.outputRadS > 0) {
+    initialParams.outputRadS = extracted.outputRadS;
+    userProvidedKeys.add('outputRadS');
+  } else if (localExtracted.outputRadS !== undefined && localExtracted.outputRadS > 0) {
+    initialParams.outputRadS = localExtracted.outputRadS;
+    userProvidedKeys.add('outputRadS');
+  } else if (parserResult.nodes.outputRadS !== undefined && parserResult.values.outputRadS > 0) {
+    initialParams.outputRadS = parserResult.values.outputRadS;
+    userProvidedKeys.add('outputRadS');
   }
 
   if (extracted.targetRatio !== null && extracted.targetRatio !== undefined && extracted.targetRatio > 0) {
     initialParams.totalRatio = extracted.targetRatio;
     userProvidedKeys.add('totalRatio');
-  } else if (localExtracted.ratio !== undefined && localExtracted.ratio > 0) {
-    initialParams.totalRatio = localExtracted.ratio;
+  } else if (localExtracted.totalRatio !== undefined && localExtracted.totalRatio > 0) {
+    initialParams.totalRatio = localExtracted.totalRatio;
     userProvidedKeys.add('totalRatio');
-  } else if (parserResult.values.totalRatio !== undefined && parserResult.values.totalRatio > 0) {
+  } else if (parserResult.nodes.totalRatio !== undefined && parserResult.values.totalRatio > 0) {
     initialParams.totalRatio = parserResult.values.totalRatio;
     userProvidedKeys.add('totalRatio');
   }
 
-  const hasSfCondition = !!(extracted.serviceFactorCondition || localExtracted.service_factor_condition);
+  const hasSfCondition = !!(extracted.serviceFactorCondition || localExtracted.serviceFactorCondition);
   if (!hasSfCondition) {
     if (extracted.serviceFactor !== null && extracted.serviceFactor !== undefined && extracted.serviceFactor > 0) {
       initialParams.serviceFactor = extracted.serviceFactor;
       userProvidedKeys.add('serviceFactor');
-    } else if (localExtracted.service_factor !== undefined && localExtracted.service_factor > 0) {
-      initialParams.serviceFactor = localExtracted.service_factor;
+    } else if (localExtracted.serviceFactor !== undefined && localExtracted.serviceFactor > 0) {
+      initialParams.serviceFactor = localExtracted.serviceFactor;
       userProvidedKeys.add('serviceFactor');
-    } else if (parserResult.values.serviceFactor !== undefined && parserResult.values.serviceFactor > 0) {
+    } else if (parserResult.nodes.serviceFactor !== undefined && parserResult.values.serviceFactor > 0) {
       initialParams.serviceFactor = parserResult.values.serviceFactor;
       userProvidedKeys.add('serviceFactor');
     }
@@ -498,10 +561,51 @@ export function generateAuditReport(
     userProvidedKeys.add('stages');
   }
 
+  if (extracted.outputTorqueNm !== null && extracted.outputTorqueNm !== undefined && extracted.outputTorqueNm > 0) {
+    initialParams.outputTorqueNm = extracted.outputTorqueNm;
+    userProvidedKeys.add('outputTorqueNm');
+  } else if (parserResult.nodes.outputTorqueNm !== undefined) {
+    userProvidedKeys.add('outputTorqueNm');
+  }
+
+  if (extracted.inputTorqueNm !== null && extracted.inputTorqueNm !== undefined && extracted.inputTorqueNm > 0) {
+    initialParams.inputTorqueNm = extracted.inputTorqueNm;
+    userProvidedKeys.add('inputTorqueNm');
+  } else if (parserResult.nodes.inputTorqueNm !== undefined) {
+    userProvidedKeys.add('inputTorqueNm');
+  }
+  if (parserResult.nodes.efficiency !== undefined && parserResult.nodes.efficiency.type !== 'SUGGESTED') {
+    userProvidedKeys.add('efficiency');
+  }
+
   // Execute the Application Knowledge Engine analysis
   const knowledgeAnalysis = ApplicationKnowledgeEngine.analyze(rawText, initialParams, userProvidedKeys);
   const derivationResult = knowledgeAnalysis.derivationResult as DerivationSessionReport;
   const resolved = derivationResult.derivedParameters;
+
+  // Convert standard SI units to display units for report generation
+  if (resolved.powerW !== undefined && resolved.powerW !== null) {
+    resolved.powerKW = resolved.powerW / 1000;
+  }
+  if (resolved.inputRadS !== undefined && resolved.inputRadS !== null) {
+    resolved.inputRPM = resolved.inputRadS * 60 / (2 * Math.PI);
+  }
+  if (resolved.outputRadS !== undefined && resolved.outputRadS !== null) {
+    resolved.outputRPM = resolved.outputRadS * 60 / (2 * Math.PI);
+  }
+
+  for (const trace of derivationResult.traces) {
+    if (trace.outputProduced.startsWith('powerW')) {
+      trace.outputProduced = trace.outputProduced.replace('powerW', 'powerKW');
+      trace.value = trace.value / 1000;
+    } else if (trace.outputProduced.startsWith('inputRadS')) {
+      trace.outputProduced = trace.outputProduced.replace('inputRadS', 'inputRPM');
+      trace.value = trace.value * 60 / (2 * Math.PI);
+    } else if (trace.outputProduced.startsWith('outputRadS')) {
+      trace.outputProduced = trace.outputProduced.replace('outputRadS', 'outputRPM');
+      trace.value = trace.value * 60 / (2 * Math.PI);
+    }
+  }
 
   // 1. PROJECT DETAILS
   const projectName = extracted.projectName || 'MAGTORQ Design Project';
@@ -578,20 +682,38 @@ export function generateAuditReport(
   } else if (resolved.inputRPM !== undefined && resolved.inputRPM !== null) {
     resolvedInputRPM = resolved.inputRPM;
     inputRPMReasoning = `Resolved input motor speed of ${resolvedInputRPM} RPM.`;
-  } else if (extracted.inputRPM !== null && extracted.inputRPM !== undefined && extracted.inputRPM > 0) {
-    resolvedInputRPM = extracted.inputRPM;
+  } else if (extInputRPM !== null && extInputRPM !== undefined && extInputRPM > 0) {
+    resolvedInputRPM = extInputRPM;
     inputRPMReasoning = `Customer specified explicit motor speed of ${resolvedInputRPM} RPM.`;
-  } else if (localExtracted.input_rpm !== undefined && localExtracted.input_rpm > 0) {
-    resolvedInputRPM = localExtracted.input_rpm;
+  } else if (localExtInputRPM !== undefined && localExtInputRPM > 0) {
+    resolvedInputRPM = localExtInputRPM;
     inputRPMReasoning = `Extracted speed of ${resolvedInputRPM} RPM from raw text.`;
   } else if (extPoles !== undefined && extPoles !== null && extPoles > 0) {
-    const speed = MotorSpeedEngine.actualSpeed(extPoles, frequencyHz);
+    // poles synchronization speed calculation: (120 * f) / poles
+    const syncSpeedRPM = (120 * frequencyHz) / extPoles;
+    const speed = syncSpeedRPM * (1 - 0.04); // actual speed assuming avg motor slip
     resolvedInputRPM = speed;
     inputRPMType = 'DERIVED';
     inputRPMSource = 'Motor Poles Rule Engine';
     inputRPMFormula = 'Poles-to-Speed Table Mapping';
     inputRPMSteps = `${extPoles}-Pole Motor → ${resolvedInputRPM} RPM`;
-    inputRPMReasoning = `Derived from detected motor pole count of ${extPoles}. Synchronous speed at ${frequencyHz}Hz is ${(120 * frequencyHz) / extPoles} RPM, operating slip results in approx ${resolvedInputRPM} RPM.`;
+    inputRPMReasoning = `Derived from detected motor pole count of ${extPoles}. Synchronous speed at ${frequencyHz}Hz is ${syncSpeedRPM} RPM, operating slip results in approx ${resolvedInputRPM} RPM.`;
+  }
+
+  if ((extPoles === null || extPoles === undefined) && resolvedInputRPM) {
+    if (resolvedInputRPM >= 2700 && resolvedInputRPM <= 3100) {
+      extPoles = 2;
+      deducedPoles = true;
+    } else if (resolvedInputRPM >= 1350 && resolvedInputRPM <= 1550) {
+      extPoles = 4;
+      deducedPoles = true;
+    } else if (resolvedInputRPM >= 900 && resolvedInputRPM <= 1050) {
+      extPoles = 6;
+      deducedPoles = true;
+    } else if (resolvedInputRPM >= 680 && resolvedInputRPM <= 780) {
+      extPoles = 8;
+      deducedPoles = true;
+    }
   }
 
   // Output RPM
@@ -614,11 +736,11 @@ export function generateAuditReport(
   } else if (resolved.outputRPM !== undefined && resolved.outputRPM !== null) {
     resolvedOutputRPM = resolved.outputRPM;
     outputRPMReasoning = `Resolved output speed of ${resolvedOutputRPM} RPM.`;
-  } else if (extracted.outputRPM !== null && extracted.outputRPM !== undefined && extracted.outputRPM > 0) {
-    resolvedOutputRPM = extracted.outputRPM;
+  } else if (extOutputRPM !== null && extOutputRPM !== undefined && extOutputRPM > 0) {
+    resolvedOutputRPM = extOutputRPM;
     outputRPMReasoning = `Extracted explicit target output speed of ${resolvedOutputRPM} RPM.`;
-  } else if (localExtracted.output_rpm !== undefined && localExtracted.output_rpm > 0) {
-    resolvedOutputRPM = localExtracted.output_rpm;
+  } else if (localExtOutputRPM !== undefined && localExtOutputRPM > 0) {
+    resolvedOutputRPM = localExtOutputRPM;
     outputRPMReasoning = `Extracted target output speed of ${resolvedOutputRPM} RPM from text.`;
   }
 
@@ -645,8 +767,8 @@ export function generateAuditReport(
   } else if (extracted.targetRatio !== null && extracted.targetRatio !== undefined && extracted.targetRatio > 0) {
     resolvedRatio = extracted.targetRatio;
     ratioReasoning = `Extracted explicit target gear ratio of ${resolvedRatio}:1.`;
-  } else if (localExtracted.ratio !== undefined && localExtracted.ratio > 0) {
-    resolvedRatio = localExtracted.ratio;
+  } else if (localExtracted.totalRatio !== undefined && localExtracted.totalRatio > 0) {
+    resolvedRatio = localExtracted.totalRatio;
     ratioReasoning = `Extracted target gear ratio of ${resolvedRatio}:1 from text.`;
   }
 
@@ -655,14 +777,29 @@ export function generateAuditReport(
   const outputRPMRange = extractRange(rawText, 'output');
   const ratioRange = extractRange(rawText, 'ratio');
 
-  // Exact value overrides for hyphenated text cases where general parsers failed or matched range bounds
   let parsedInputExact: number | null = null;
-  const inMatch = rawText.match(/(?:input|motor|inlet)\s*(?:rpm|speed)?\s*[:=\s]\s*(\d+(?:\.\d+)?)(?!\.\d)\b(?!\s*(?:hp|kw|lbf|nm|kgf|kg|n·m|lb[f\-\.]*ft|watts|w)\b)(?!\s*[-–—])/i);
-  if (inMatch) parsedInputExact = parseFloat(inMatch[1]);
+  const inMatch = rawText.match(/(?:input|motor|inlet)\s*(?:rpm|speed)?\s*[:=\s]\s*(\d+(?:\.\d+)?)\b(?!\s*(?:hp|kw|lbf|nm|kgf|kg|n·m|lb[f\-\.]*ft|watts|w)\b)(?!\s*[-–—])/i);
+  if (inMatch) {
+    let val = parseFloat(inMatch[1]);
+    const numIndex = inMatch.index! + inMatch[0].indexOf(inMatch[1]) + inMatch[1].length;
+    const trailing = rawText.slice(numIndex, numIndex + 10).toLowerCase().trim();
+    if (trailing.startsWith('rps')) {
+      val = val * 60;
+    }
+    parsedInputExact = val;
+  }
 
   let parsedOutputExact: number | null = null;
-  const outMatch = rawText.match(/(?:output|target|final|required|conveyor)\s*(?:rpm|speed)?\s*[:=\s]\s*(\d+(?:\.\d+)?)(?!\.\d)\b(?!\s*(?:hp|kw|lbf|nm|kgf|kg|n·m|lb[f\-\.]*ft|watts|w)\b)(?!\s*[-–—])/i);
-  if (outMatch) parsedOutputExact = parseFloat(outMatch[1]);
+  const outMatch = rawText.match(/(?:output|target|final|required)\s*(?:rpm|speed)?\s*[:=\s]\s*(\d+(?:\.\d+)?)\b(?!\s*(?:hp|kw|lbf|nm|kgf|kg|n·m|lb[f\-\.]*ft|watts|w)\b)(?!\s*[-–—])/i);
+  if (outMatch) {
+    let val = parseFloat(outMatch[1]);
+    const numIndex = outMatch.index! + outMatch[0].indexOf(outMatch[1]) + outMatch[1].length;
+    const trailing = rawText.slice(numIndex, numIndex + 10).toLowerCase().trim();
+    if (trailing.startsWith('rps')) {
+      val = val * 60;
+    }
+    parsedOutputExact = val;
+  }
 
   let parsedRatioExact: number | null = null;
   const ratioMatch = rawText.match(/(?:gear\s+)?ratio\s*[:=\s]\s*(\d+(?:\.\d+)?)(?!\.\d)\b(?!\s*[-–—])/i);
@@ -687,9 +824,9 @@ export function generateAuditReport(
                   (resolvedRatio ? { type: 'exact' as const, value: resolvedRatio, raw: String(resolvedRatio) } : null);
 
   // STEP 2: Count explicit exact parameters (excluding those derived from rules)
-  const isInputExplicit = normInput?.type === 'exact' && (userProvidedKeys.has('inputRPM') || parsedInputExact !== null || (localExtracted.input_rpm !== undefined && localExtracted.input_rpm > 0));
-  const isOutputExplicit = normOutput?.type === 'exact' && (userProvidedKeys.has('outputRPM') || parsedOutputExact !== null || (localExtracted.output_rpm !== undefined && localExtracted.output_rpm > 0));
-  const isRatioExplicit = normRatio?.type === 'exact' && (userProvidedKeys.has('totalRatio') || parsedRatioExact !== null || (localExtracted.ratio !== undefined && localExtracted.ratio > 0));
+  const isInputExplicit = normInput?.type === 'exact' && (userProvidedKeys.has('inputRadS') || parsedInputExact !== null || (localExtInputRPM !== undefined && localExtInputRPM > 0));
+  const isOutputExplicit = normOutput?.type === 'exact' && (userProvidedKeys.has('outputRadS') || parsedOutputExact !== null || (localExtOutputRPM !== undefined && localExtOutputRPM > 0));
+  const isRatioExplicit = normRatio?.type === 'exact' && (userProvidedKeys.has('totalRatio') || parsedRatioExact !== null || (localExtracted.totalRatio !== undefined && localExtracted.totalRatio > 0));
 
   let explicitCount = 0;
   if (isInputExplicit) explicitCount++;
@@ -710,9 +847,10 @@ export function generateAuditReport(
     } else {
       if (isRatioExplicit) {
         resolvedRatio = normRatio!.value!;
+        resolvedOutputRPM = resolvedInputRPM! / resolvedRatio!;
         resolutionType = 'EXACT';
         confidence = 'HIGH';
-        notes = `Accepted provided Ratio of ${normRatio!.value!} directly alongside Input/Output RPM, ignoring derived ratio mismatch of ${ratioCheck.toFixed(4)}.`;
+        notes = `Resolved Output RPM to mathematically consistent ${resolvedOutputRPM.toFixed(2)} RPM (Input RPM ${resolvedInputRPM} / Ratio ${resolvedRatio}), overriding mismatched extracted speed of ${normOutput!.value} RPM.`;
       } else {
         const conflictMsg = `ENGINEERING DATA CONFLICT\nProvided Ratio: ${normRatio!.value!}\nDerived Ratio Check: ${ratioCheck.toFixed(4)}\nReason For Conflict: Ratio check is inconsistent with provided exact ratio.`;
         console.warn(conflictMsg);
@@ -877,11 +1015,16 @@ export function generateAuditReport(
   let powerSteps = '';
   let powerReasoning = '';
 
-  const extPower = extracted.powerKW || localExtracted.power_kw;
+  const extPower = extPowerKW || localExtPowerKW;
+  powerRange = extractRange(rawText, 'power');
   const derivedPowerTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('powerKW'));
   if (derivedPowerTrace) {
     resolvedPower = derivedPowerTrace.value;
-    powerType = 'ENGINE_RULE';
+    if (derivedPowerTrace.ruleId.startsWith('DR-POWER-') || ['DR-024', 'DR-025', 'DR-026'].includes(derivedPowerTrace.ruleId)) {
+      powerType = 'CALCULATED';
+    } else {
+      powerType = 'ENGINE_RULE';
+    }
     powerSource = derivedPowerTrace.ruleName;
     powerFormula = derivedPowerTrace.formulaUsed;
     powerSteps = derivedPowerTrace.outputProduced;
@@ -893,6 +1036,20 @@ export function generateAuditReport(
   } else if (extPower !== null && extPower !== undefined && extPower > 0) {
     resolvedPower = extPower;
     powerReasoning = `The customer directly requested a power rating of ${resolvedPower} kW.`;
+  }
+
+  if (powerRange && resolvedPower !== null) {
+    if (resolvedPower >= powerRange.min && resolvedPower <= powerRange.max) {
+      powerReasoning += ` (Validated: Derived value ${resolvedPower.toFixed(2)} kW falls within requested range ${powerRange.min}-${powerRange.max} kW.)`;
+    } else {
+      const conflictMsg = `ENGINEERING DATA CONFLICT\nProvided Range: ${powerRange.raw}\nDerived Value: ${resolvedPower.toFixed(2)} kW\nReason For Conflict: Derived power falls outside the provided range.`;
+      console.warn(conflictMsg);
+      throw new Error(conflictMsg);
+    }
+  } else if (powerRange && resolvedPower === null) {
+    resolvedPower = powerRange.min + (powerRange.max - powerRange.min) / 3;
+    powerType = 'CALCULATED';
+    powerReasoning = `Resolved exactly using 1/3 range rule from range: ${powerRange.raw}`;
   }
 
   if (resolvedInputRPM === null && inputRPMRange !== null) {
@@ -908,45 +1065,50 @@ export function generateAuditReport(
     ratioReasoning = `Resolved exactly using 1/3 range rule from range: ${ratioRange.raw}`;
   }
 
-  // ─── FORMULA-BASED RESOLUTION ───
-  // Construct a temporary GearboxInput parameter mapping object
-  const gearboxInput: any = {
-    power_kw: resolvedPower || undefined,
-    power_hp: extHP || undefined,
-    input_rpm: resolvedInputRPM || undefined,
-    output_rpm: resolvedOutputRPM || undefined,
-    total_ratio: resolvedRatio || undefined,
-    input_torque_nm: localExtracted.torque_nm || undefined,
-    axial_load_kn: localExtracted.axial_load_kn || undefined,
-    linear_velocity_mm_min: localExtracted.linear_speed_mm_min || undefined,
-    screw_pitch_mm: localExtracted.pitch_mm || undefined,
+  // Construct a temporary GearboxInput parameter mapping object in standard SI units
+  const gearboxInput: GearboxInput = {
+    powerW: resolvedPower ? resolvedPower * 1000 : undefined,
+    powerHP: extHP || undefined,
+    inputRadS: resolvedInputRPM ? resolvedInputRPM * 2 * Math.PI / 60 : undefined,
+    outputRadS: resolvedOutputRPM ? resolvedOutputRPM * 2 * Math.PI / 60 : undefined,
+    totalRatio: resolvedRatio || undefined,
+    outputTorqueNm: resolved.outputTorqueNm || parserResult.values.outputTorqueNm || undefined,
+    inputTorqueNm: resolved.inputTorqueNm || parserResult.values.inputTorqueNm || (localExtracted.torqueNm && !parserResult.values.outputTorqueNm ? localExtracted.torqueNm : undefined),
+    axialLoadN: localExtracted.axialLoadN || undefined,
+    linearVelocityMS: localExtracted.linearVelocityMS || undefined,
+    screwPitchM: localExtracted.screwPitchM || undefined,
+    applicationType: applicationType,
+    loadType: loadType === 'Heavy Shock' ? 'heavy_shock' : loadType === 'Uniform' ? 'uniform' : 'variable',
+    dutyHoursPerDay: dutyHours,
+    startsPerHour: startsPerHour,
   };
 
-  // 1. Resolve HP to kW using PowerTorqueEngine
-  if (!gearboxInput.power_kw && gearboxInput.power_hp) {
-    gearboxInput.power_kw = PowerTorqueEngine.hpToKw(gearboxInput.power_hp);
-    resolvedPower = gearboxInput.power_kw;
+  // 1. Resolve HP to kW using PowerTorqueEngine (internal check remains kW for display, but powerW is updated)
+  if (!gearboxInput.powerW && gearboxInput.powerHP) {
+    const powerWValue = gearboxInput.powerHP * 745.7;
+    gearboxInput.powerW = powerWValue;
+    resolvedPower = powerWValue / 1000;
     powerType = 'CALCULATED';
     powerSource = 'PowerTorqueEngine.hpToKw';
     powerFormula = 'P_kw = HP * 0.7457';
-    powerSteps = `${gearboxInput.power_hp} HP * 0.7457 = ${resolvedPower!.toFixed(2)} kW`;
-    powerReasoning = `Calculated power of ${resolvedPower!.toFixed(2)} kW from HP input (${gearboxInput.power_hp} HP) using conversion factor 0.7457.`;
+    powerSteps = `${gearboxInput.powerHP} HP * 0.7457 = ${resolvedPower.toFixed(2)} kW`;
+    powerReasoning = `Calculated power of ${resolvedPower.toFixed(2)} kW from HP input (${gearboxInput.powerHP} HP) using conversion factor 0.7457.`;
   }
 
-  // 2. Resolve input speed using MotorSpeedEngine.deriveRPM formula
+  // 2. Resolve input speed using MotorSpeedEngine.deriveRadS formula
   const isAnySpeedRange = !!(inputRPMRange || outputRPMRange || ratioRange);
 
   if (!isAnySpeedRange) {
-    if (!gearboxInput.input_rpm) {
-      const derived = MotorSpeedEngine.deriveRPM(extPoles || undefined, frequencyHz);
-      if (derived !== undefined && derived !== null) {
-        gearboxInput.input_rpm = derived;
-        resolvedInputRPM = derived;
+    if (!gearboxInput.inputRadS) {
+      const derivedRadS = MotorSpeedEngine.deriveRadS(extPoles || undefined, frequencyHz);
+      if (derivedRadS !== undefined && derivedRadS !== null) {
+        gearboxInput.inputRadS = derivedRadS;
+        resolvedInputRPM = derivedRadS * 60 / (2 * Math.PI);
         inputRPMType = 'DERIVED';
-        inputRPMSource = 'MotorSpeedEngine.deriveRPM';
-        inputRPMFormula = 'N_in = deriveRPM(poles, hz)';
-        inputRPMSteps = `deriveRPM(${extPoles || 'null'}, ${frequencyHz}) = ${resolvedInputRPM} RPM`;
-        inputRPMReasoning = `Derived input motor speed of ${resolvedInputRPM} RPM using MotorSpeedEngine.deriveRPM formula from calculations.ts.`;
+        inputRPMSource = 'MotorSpeedEngine.deriveRadS';
+        inputRPMFormula = 'ω_in = deriveRadS(poles, hz)';
+        inputRPMSteps = `deriveRadS(${extPoles || 'null'}, ${frequencyHz}) = ${derivedRadS.toFixed(3)} rad/s`;
+        inputRPMReasoning = `Derived input motor speed of ${resolvedInputRPM.toFixed(1)} RPM using MotorSpeedEngine.deriveRadS formula from calculations.ts.`;
       } else {
         resolvedInputRPM = null;
         inputRPMType = 'ASSUMED';
@@ -957,74 +1119,76 @@ export function generateAuditReport(
   }
 
   // 3. Call MissingDataResolutionEngine to resolve power, output speed, and ratio
-  const resolvedPowerByEngine = MissingDataResolutionEngine.resolvePower(gearboxInput);
-  if (resolvedPower === null && resolvedPowerByEngine !== undefined) {
-    resolvedPower = resolvedPowerByEngine;
-    gearboxInput.power_kw = resolvedPower;
+  const resolvedPowerWByEngine = MissingDataResolutionEngine.resolvePower(gearboxInput);
+  if (resolvedPower === null && resolvedPowerWByEngine !== undefined) {
+    resolvedPower = resolvedPowerWByEngine / 1000;
+    gearboxInput.powerW = resolvedPowerWByEngine;
     powerType = 'CALCULATED';
     powerSource = 'MissingDataResolutionEngine.resolvePower';
-    powerFormula = 'P = (T_in * 2π * N_in) / 60000';
-    powerSteps = `P = (${gearboxInput.input_torque_nm} Nm * 2π * ${gearboxInput.input_rpm} RPM) / 60000 = ${resolvedPower.toFixed(2)} kW`;
-    powerReasoning = `Derived input power of ${resolvedPower.toFixed(2)} kW from torque (${gearboxInput.input_torque_nm} Nm) and input speed (${gearboxInput.input_rpm} RPM).`;
+    powerFormula = 'P = T_in * ω_in';
+    powerSteps = `P = ${gearboxInput.inputTorqueNm} Nm * ${gearboxInput.inputRadS?.toFixed(3)} rad/s = ${(resolvedPowerWByEngine / 1000).toFixed(2)} kW`;
+    powerReasoning = `Derived input power of ${resolvedPower.toFixed(2)} kW from torque (${gearboxInput.inputTorqueNm} Nm) and input speed.`;
   }
 
-  gearboxInput.input_rpm = resolvedInputRPM || gearboxInput.input_rpm;
-  gearboxInput.output_rpm = resolvedOutputRPM || gearboxInput.output_rpm;
-  gearboxInput.total_ratio = resolvedRatio || gearboxInput.total_ratio;
+  gearboxInput.inputRadS = resolvedInputRPM ? resolvedInputRPM * 2 * Math.PI / 60 : gearboxInput.inputRadS;
+  gearboxInput.outputRadS = resolvedOutputRPM ? resolvedOutputRPM * 2 * Math.PI / 60 : gearboxInput.outputRadS;
+  gearboxInput.totalRatio = resolvedRatio || gearboxInput.totalRatio;
 
-  const resolvedOutputRPMByEngine = MissingDataResolutionEngine.resolveOutputRPM(gearboxInput);
-  if (resolvedOutputRPM === null && resolvedOutputRPMByEngine !== undefined) {
-    resolvedOutputRPM = resolvedOutputRPMByEngine;
-    gearboxInput.output_rpm = resolvedOutputRPM;
+  const resolvedOutputRadSByEngine = MissingDataResolutionEngine.resolveOutputRadS(gearboxInput);
+  if (resolvedOutputRPM === null && resolvedOutputRadSByEngine !== undefined) {
+    resolvedOutputRPM = resolvedOutputRadSByEngine * 60 / (2 * Math.PI);
+    gearboxInput.outputRadS = resolvedOutputRadSByEngine;
     outputRPMType = 'CALCULATED';
-    outputRPMSource = 'MissingDataResolutionEngine.resolveOutputRPM';
-    if (gearboxInput.linear_velocity_mm_min && gearboxInput.screw_pitch_mm) {
-      outputRPMFormula = 'N_out = v_linear / p_screw';
-      outputRPMSteps = `N_out = ${gearboxInput.linear_velocity_mm_min} / ${gearboxInput.screw_pitch_mm} = ${resolvedOutputRPM.toFixed(1)} RPM`;
-      outputRPMReasoning = `Calculated target screw output speed of ${resolvedOutputRPM.toFixed(1)} RPM from linear travel velocity (${gearboxInput.linear_velocity_mm_min} mm/min) and screw pitch (${gearboxInput.screw_pitch_mm} mm).`;
+    outputRPMSource = 'MissingDataResolutionEngine.resolveOutputRadS';
+    if (gearboxInput.linearVelocityMS && gearboxInput.screwPitchM) {
+      outputRPMFormula = 'ω_out = v_linear * 2π / p_screw';
+      outputRPMSteps = `N_out = ${resolvedOutputRPM.toFixed(1)} RPM`;
+      outputRPMReasoning = `Calculated target screw output speed of ${resolvedOutputRPM.toFixed(1)} RPM from linear travel velocity and screw pitch.`;
     } else {
-      outputRPMFormula = 'N_out = N_in / Ratio';
-      outputRPMSteps = `N_out = ${gearboxInput.input_rpm} / ${gearboxInput.total_ratio} = ${resolvedOutputRPM.toFixed(1)} RPM`;
-      outputRPMReasoning = `Calculated target output speed of ${resolvedOutputRPM.toFixed(1)} RPM from input speed (${gearboxInput.input_rpm} RPM) and gear ratio (${gearboxInput.total_ratio}:1).`;
+      outputRPMFormula = 'ω_out = ω_in / Ratio';
+      outputRPMSteps = `N_out = ${resolvedOutputRPM.toFixed(1)} RPM`;
+      outputRPMReasoning = `Calculated target output speed of ${resolvedOutputRPM.toFixed(1)} RPM from input speed and gear ratio.`;
     }
   }
 
   const resolvedRatioByEngine = MissingDataResolutionEngine.resolveRatio(gearboxInput);
   if (resolvedRatio === null && resolvedRatioByEngine !== undefined) {
     resolvedRatio = resolvedRatioByEngine;
-    gearboxInput.total_ratio = resolvedRatio;
+    gearboxInput.totalRatio = resolvedRatio;
     ratioType = 'CALCULATED';
     ratioSource = 'MissingDataResolutionEngine.resolveRatio';
-    ratioFormula = 'Ratio = N_in / N_out';
-    ratioSteps = `Ratio = ${gearboxInput.input_rpm} / ${gearboxInput.output_rpm?.toFixed(1)} = ${resolvedRatio.toFixed(2)}`;
-    ratioReasoning = `Calculated target gear ratio of ${resolvedRatio.toFixed(2)}:1 from input speed (${gearboxInput.input_rpm} RPM) and output speed (${gearboxInput.output_rpm?.toFixed(1)} RPM).`;
+    ratioFormula = 'Ratio = ω_in / ω_out';
+    ratioSteps = `Ratio = ${resolvedRatio.toFixed(2)}`;
+    ratioReasoning = `Calculated target gear ratio of ${resolvedRatio.toFixed(2)}:1 from input speed and output speed.`;
   }
 
   // 4. Fallback ratio cross-resolution using RatioEngine
   if (resolvedRatio === null && resolvedInputRPM !== null && resolvedOutputRPM !== null && resolvedOutputRPM > 0) {
-    resolvedRatio = RatioEngine.calculateRatio(resolvedInputRPM, resolvedOutputRPM);
+    resolvedRatio = RatioEngine.calculateRatio(resolvedInputRPM * 2 * Math.PI / 60, resolvedOutputRPM * 2 * Math.PI / 60);
     ratioType = 'CALCULATED';
     ratioSource = 'RatioEngine.calculateRatio';
-    ratioFormula = 'Ratio = N_in / N_out';
-    ratioSteps = `Ratio = ${resolvedInputRPM} / ${resolvedOutputRPM.toFixed(1)} = ${resolvedRatio.toFixed(2)}`;
+    ratioFormula = 'Ratio = ω_in / ω_out';
+    ratioSteps = `Ratio = ${resolvedRatio.toFixed(2)}`;
     ratioReasoning = `Calculated total gear ratio of ${resolvedRatio.toFixed(2)}:1 from input speed (${resolvedInputRPM} RPM) and target output speed (${resolvedOutputRPM.toFixed(1)} RPM).`;
   }
 
   if (resolvedOutputRPM === null && resolvedInputRPM !== null && resolvedRatio !== null && resolvedRatio > 0) {
-    resolvedOutputRPM = RatioEngine.outputRPM(resolvedInputRPM, resolvedRatio);
+    const calculatedOutRadS = RatioEngine.outputRadS(resolvedInputRPM * 2 * Math.PI / 60, resolvedRatio);
+    resolvedOutputRPM = calculatedOutRadS * 60 / (2 * Math.PI);
     outputRPMType = 'CALCULATED';
-    outputRPMSource = 'RatioEngine.outputRPM';
-    outputRPMFormula = 'N_out = N_in / Ratio';
-    outputRPMSteps = `N_out = ${resolvedInputRPM} / ${resolvedRatio.toFixed(2)} = ${resolvedOutputRPM.toFixed(1)}`;
+    outputRPMSource = 'RatioEngine.outputRadS';
+    outputRPMFormula = 'ω_out = ω_in / Ratio';
+    outputRPMSteps = `N_out = ${resolvedOutputRPM.toFixed(1)}`;
     outputRPMReasoning = `Calculated target output speed of ${resolvedOutputRPM.toFixed(1)} RPM from input speed (${resolvedInputRPM} RPM) and gear ratio (${resolvedRatio.toFixed(2)}:1).`;
   }
 
   if (resolvedInputRPM === null && resolvedOutputRPM !== null && resolvedRatio !== null && resolvedRatio > 0) {
-    resolvedInputRPM = RatioEngine.inputRPM(resolvedOutputRPM, resolvedRatio);
+    const calculatedInRadS = RatioEngine.inputRadS(resolvedOutputRPM * 2 * Math.PI / 60, resolvedRatio);
+    resolvedInputRPM = calculatedInRadS * 60 / (2 * Math.PI);
     inputRPMType = 'CALCULATED';
-    inputRPMSource = 'RatioEngine.inputRPM';
-    inputRPMFormula = 'N_in = N_out * Ratio';
-    inputRPMSteps = `N_in = ${resolvedOutputRPM.toFixed(1)} * ${resolvedRatio.toFixed(2)} = ${resolvedInputRPM.toFixed(1)}`;
+    inputRPMSource = 'RatioEngine.inputRadS';
+    inputRPMFormula = 'ω_in = ω_out * Ratio';
+    inputRPMSteps = `N_in = ${resolvedInputRPM.toFixed(1)}`;
     inputRPMReasoning = `Calculated required input speed of ${resolvedInputRPM.toFixed(1)} RPM from target output speed (${resolvedOutputRPM.toFixed(1)} RPM) and gear ratio (${resolvedRatio.toFixed(2)}:1).`;
   }
 
@@ -1069,14 +1233,8 @@ ${notes}`);
   let sfSteps = '';
   let sfReasoning = '';
 
-  let startsPerHour = 4;
-  const startsMatch = rawText.match(/(\d+)\s*(?:starts|start-ups)\s*(?:per\s*hour|\/hr)/i);
-  if (startsMatch) {
-    startsPerHour = parseInt(startsMatch[1], 10);
-  }
-
-  const sfTargetVal = localExtracted.service_factor !== undefined ? localExtracted.service_factor : (extracted.serviceFactor !== null && extracted.serviceFactor !== undefined ? extracted.serviceFactor : null);
-  const sfCondition = localExtracted.service_factor_condition !== undefined ? localExtracted.service_factor_condition : (extracted.serviceFactorCondition || null);
+  const sfTargetVal = localExtracted.serviceFactor !== undefined ? localExtracted.serviceFactor : (extracted.serviceFactor !== null && extracted.serviceFactor !== undefined ? extracted.serviceFactor : null);
+  const sfCondition = localExtracted.serviceFactorCondition !== undefined ? localExtracted.serviceFactorCondition : (extracted.serviceFactorCondition || null);
 
   if (sfTargetVal !== null && sfCondition) {
     let baseSF = 1.5;
@@ -1095,7 +1253,7 @@ ${notes}`);
         applicationType,
         dutyHours,
         startsPerHour,
-        localExtracted.temperature_c !== undefined ? `temp-${localExtracted.temperature_c}` : undefined
+        localExtAmbientTemperatureC !== undefined ? `temp-${localExtAmbientTemperatureC}` : undefined
       );
       baseSFFormula = `ServiceFactorEngine.calculate(${applicationType}, ${dutyHours} hrs, ${startsPerHour} starts)`;
       baseSFSteps = `Calculated SF = ${baseSF}`;
@@ -1153,7 +1311,7 @@ ${notes}`);
       applicationType,
       dutyHours,
       startsPerHour,
-      localExtracted.temperature_c !== undefined ? `temp-${localExtracted.temperature_c}` : undefined
+      localExtAmbientTemperatureC !== undefined ? `temp-${localExtAmbientTemperatureC}` : undefined
     );
     sfType = 'SUGGESTED';
     sfSource = 'MAGTORQ Service Factor Engine';
@@ -1246,14 +1404,25 @@ ${notes}`);
     return 'Low';
   };
 
+  const getTraceConfAndType = (paramName: string, defaultType: ParameterType, defaultVal: any) => {
+    const trace = derivationResult.traces.find(t => t.outputProduced.startsWith(paramName));
+    if (trace) {
+      const type = trace.type === 'ASSUMED_VALUE' ? 'ASSUMED_VALUE' : defaultType;
+      const confidence = (trace.confidence === 'HIGH' ? 'High' : trace.confidence === 'MEDIUM' ? 'Medium' : 'Low') as ConfidenceLevel;
+      return { type, confidence };
+    }
+    return { type: defaultType, confidence: determineConf(defaultType, defaultVal) };
+  };
+
+  const powerMeta = getTraceConfAndType('powerKW', powerType, resolvedPower);
   const powerNode: AuditParameterNode<number> = {
     name: 'Power (kW)',
     value: resolvedPower!,
-    type: powerType,
+    type: powerMeta.type,
     source: powerSource,
     formula: powerFormula,
     calculationSteps: powerSteps || `${resolvedPower} kW`,
-    confidence: determineConf(powerType, resolvedPower),
+    confidence: powerMeta.confidence,
     reasoning: powerReasoning || 'Power rating could not be resolved.'
   };
 
@@ -1271,44 +1440,47 @@ ${notes}`);
   const motorPolesNode: AuditParameterNode<number | null> = {
     name: 'Motor Pole Count',
     value: extPoles || null,
-    type: extPoles ? 'EXTRACTED' : 'ASSUMED',
-    source: extPoles ? 'Customer Requirement Document' : 'N/A',
-    formula: 'N/A',
-    calculationSteps: extPoles ? `${extPoles} Poles` : 'N/A',
-    confidence: determineConf(extPoles ? 'EXTRACTED' : 'ASSUMED', extPoles),
-    reasoning: extPoles ? `Found explicit poles mention: ${extPoles} poles.` : 'No pole count specified.'
+    type: deducedPoles ? 'DERIVED' : (extPoles ? 'EXTRACTED' : 'ASSUMED'),
+    source: deducedPoles ? 'Motor Poles Rule Engine' : (extPoles ? 'Customer Requirement Document' : 'N/A'),
+    formula: deducedPoles ? 'Snaps to standard poles' : 'N/A',
+    calculationSteps: deducedPoles ? `Equivalent to: ${extPoles} Pole Motor at ${frequencyHz} Hz` : (extPoles ? `${extPoles} Poles` : 'N/A'),
+    confidence: determineConf(deducedPoles ? 'DERIVED' : (extPoles ? 'EXTRACTED' : 'ASSUMED'), extPoles),
+    reasoning: deducedPoles ? `Equivalent to a ${extPoles} Pole Motor operating at ${frequencyHz} Hz based on input speed of ${resolvedInputRPM?.toFixed(1) || ''}_RPM.` : (extPoles ? `Found explicit poles mention: ${extPoles} poles.` : 'No pole count specified.')
   };
 
+  const inputRPMMeta = getTraceConfAndType('inputRPM', inputRPMType, resolvedInputRPM);
   const inputRPMNode: AuditParameterNode<number> = {
     name: 'Input Speed (RPM)',
     value: resolvedInputRPM!,
-    type: inputRPMType,
+    type: inputRPMMeta.type,
     source: inputRPMSource,
     formula: inputRPMFormula,
     calculationSteps: inputRPMSteps || `${resolvedInputRPM} RPM`,
-    confidence: determineConf(inputRPMType, resolvedInputRPM),
+    confidence: inputRPMMeta.confidence,
     reasoning: inputRPMReasoning || 'Input speed could not be resolved.'
   };
 
+  const outputRPMMeta = getTraceConfAndType('outputRPM', outputRPMType, resolvedOutputRPM);
   const outputRPMNode: AuditParameterNode<number> = {
     name: 'Output Speed (RPM)',
     value: resolvedOutputRPM!,
-    type: outputRPMType,
+    type: outputRPMMeta.type,
     source: outputRPMSource,
     formula: outputRPMFormula,
     calculationSteps: outputRPMSteps || `${resolvedOutputRPM} RPM`,
-    confidence: determineConf(outputRPMType, resolvedOutputRPM),
+    confidence: outputRPMMeta.confidence,
     reasoning: outputRPMReasoning || 'Output speed could not be resolved.'
   };
 
+  const ratioMeta = getTraceConfAndType('totalRatio', ratioType, resolvedRatio);
   const ratioNode: AuditParameterNode<number> = {
     name: 'Total Gear Ratio',
     value: resolvedRatio!,
-    type: ratioType,
+    type: ratioMeta.type,
     source: ratioSource,
     formula: ratioFormula,
     calculationSteps: ratioSteps || `${resolvedRatio}:1`,
-    confidence: determineConf(ratioType, resolvedRatio),
+    confidence: ratioMeta.confidence,
     reasoning: resolvedRatio !== null ? ratioReasoning || 'Total gear ratio resolved.' : 'Total gear ratio could not be resolved.'
   };
 
@@ -1361,7 +1533,7 @@ ${notes}`);
   ) {
     const P = powerNode.value;
     const Nin = inputRPMNode.value;
-    const Tin = PowerTorqueEngine.calcTorque(P, Nin);
+    const Tin = PowerTorqueEngine.calcTorque(P * 1000, Nin * 2 * Math.PI / 60);
     inputTorqueTrace = {
       formula: 'Tin = (Power × 60000) / (2 × π × InputRPM)',
       calculationSteps: `Tin = (${P} × 60000) / (2 × π × ${Nin}) = ${Tin.toFixed(2)} N·m`,

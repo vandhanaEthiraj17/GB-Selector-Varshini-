@@ -47,6 +47,8 @@ Return ONLY valid JSON matching this schema:
   "inputRPM": number or null,
   "outputRPM": number or null,
   "targetRatio": number or null,
+  "outputTorqueNm": number or null,
+  "inputTorqueNm": number or null,
   "applicationType": string or null,
   "serviceFactor": number or null,
   "numberOfStages": number or null
@@ -109,7 +111,25 @@ ${text ? `Text Description/Extracted Text:\n---\n${text}\n---` : ''}
     const responseText = result.response.text();
     const extractedData = JSON.parse(responseText.trim());
 
-    res.json(extractedData);
+    const powerW = (extractedData.powerKW !== undefined && extractedData.powerKW !== null) ? extractedData.powerKW * 1000 : null;
+    const inputRadS = (extractedData.inputRPM !== undefined && extractedData.inputRPM !== null) ? extractedData.inputRPM * (2 * Math.PI) / 60 : null;
+    const outputRadS = (extractedData.outputRPM !== undefined && extractedData.outputRPM !== null) ? extractedData.outputRPM * (2 * Math.PI) / 60 : null;
+
+    const canonicalOutput = {
+      projectName: extractedData.projectName || null,
+      powerW,
+      inputRadS,
+      outputRadS,
+      targetRatio: extractedData.targetRatio || null,
+      outputTorqueNm: extractedData.outputTorqueNm || null,
+      inputTorqueNm: extractedData.inputTorqueNm || null,
+      applicationType: extractedData.applicationType || null,
+      serviceFactor: extractedData.serviceFactor || null,
+      numberOfStages: extractedData.numberOfStages || null,
+      serviceFactorCondition: extractedData.serviceFactorCondition || null
+    };
+
+    res.json(canonicalOutput);
   } catch (error) {
     console.error("Gemini API call failed:", error);
     

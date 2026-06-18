@@ -59,6 +59,16 @@ export class ApplicationKnowledgeEngine {
     const derivationResult = MissingParameterResolutionEngine.resolve(extractedParams, userProvidedKeys);
     const resolved = derivationResult.derivedParameters;
 
+    if (resolved.powerW !== undefined && resolved.powerW !== null) {
+      resolved.powerKW = resolved.powerW / 1000;
+    }
+    if (resolved.inputRadS !== undefined && resolved.inputRadS !== null) {
+      resolved.inputRPM = resolved.inputRadS * 60 / (2 * Math.PI);
+    }
+    if (resolved.outputRadS !== undefined && resolved.outputRadS !== null) {
+      resolved.outputRPM = resolved.outputRadS * 60 / (2 * Math.PI);
+    }
+
     const missingRequiredParams: string[] = [];
     const missingOptionalParams: string[] = [];
     const blockingMissingParams: string[] = [];
@@ -149,7 +159,24 @@ export class ApplicationKnowledgeEngine {
       clarificationQuestions.push(q);
     }
 
-    const isBlocked = blockingMissingParams.length > 0;
+    let isBlocked = blockingMissingParams.length > 0;
+
+    const ambiguousSpeedMatch = rawText.match(/(?:input\s+|output\s+|drum\s+|belt\s+|agitator\s+|mixer\s+|shaft\s+|gearbox\s+)?\b(?:speed|rpm|rps)\b\s*[:=\s]\s*(\d+(?:\.\d+)?)(?!\s*(?:rpm|rps|rad\/s|m\/s|m\/min|rads|hz|kw|hp))/i);
+    if (ambiguousSpeedMatch) {
+      const val = ambiguousSpeedMatch[1];
+      clarificationQuestions.push("Clarification Required");
+      clarificationQuestions.push(`${val} RPM?`);
+      clarificationQuestions.push(`${val} RPS?`);
+      clarificationQuestions.push(`${val} rad/s?`);
+      isBlocked = true;
+      delete resolved.inputRPM;
+      delete resolved.inputRadS;
+      delete resolved.outputRPM;
+      delete resolved.outputRadS;
+      if (!missingRequiredParams.includes('inputRPM')) {
+        missingRequiredParams.push('inputRPM');
+      }
+    }
 
     return {
       applicationId: appId,

@@ -10,6 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { CalculationResult } from '../types/CalculationResult';
 import { ChevronDown, ListFilter } from 'lucide-react';
+import { PowerTorqueEngine } from '../services/calculations';
 
 interface ResultsTableProps {
   results: CalculationResult[];
@@ -89,10 +90,10 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ results, onSelectOpt
                     {r.deviation > 0 ? `+${r.deviation.toFixed(2)}` : r.deviation.toFixed(2)}%
                   </TableCell>
                   <TableCell className="text-center text-slate-700 py-3.5 font-medium">
-                    {Math.round(r.nominal).toLocaleString()}
+                    {PowerTorqueEngine.formatTorqueExact(r.nominal)}
                   </TableCell>
                   <TableCell className="text-center text-slate-700 py-3.5 font-semibold">
-                    {Math.round(r.max).toLocaleString()}
+                    {PowerTorqueEngine.formatTorqueExact(r.max)}
                   </TableCell>
                   <TableCell className="text-center font-extrabold text-slate-900 py-3.5">
                     {gb ? gb.size : 'N/A'}

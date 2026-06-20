@@ -9,6 +9,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { EngineeringReport } from './engineeringReasoningEngine';
 import { VerificationReport } from './verificationEngine';
+import { PowerTorqueEngine } from './calculations';
 
 // ─── Colour Palette ───────────────────────────────────────────────────────────
 const BRAND_ORANGE: [number, number, number] = [255, 140, 0];
@@ -189,9 +190,9 @@ export function exportToPDF(
     { node: report.serviceFactor, label: 'Service Factor',  display: report.serviceFactor.value?.toFixed(2) },
   ];
 
-  if (report.outputTorqueNm?.value) paramRows.push({ node: report.outputTorqueNm, label: 'Output Torque', display: `${Math.round(report.outputTorqueNm.value)} N·m` });
-  if (report.rmsTorqueNm?.value) paramRows.push({ node: report.rmsTorqueNm, label: 'RMS Torque', display: `${Math.round(report.rmsTorqueNm.value)} N·m` });
-  if (report.accelerationTorqueNm?.value) paramRows.push({ node: report.accelerationTorqueNm, label: 'Accel Torque', display: `${Math.round(report.accelerationTorqueNm.value)} N·m` });
+  if (report.outputTorqueNm?.value) paramRows.push({ node: report.outputTorqueNm, label: 'Output Torque', display: `${PowerTorqueEngine.formatTorqueExact(report.outputTorqueNm.value)} N·m` });
+  if (report.rmsTorqueNm?.value) paramRows.push({ node: report.rmsTorqueNm, label: 'RMS Torque', display: `${PowerTorqueEngine.formatTorqueExact(report.rmsTorqueNm.value)} N·m` });
+  if (report.accelerationTorqueNm?.value) paramRows.push({ node: report.accelerationTorqueNm, label: 'Accel Torque', display: `${PowerTorqueEngine.formatTorqueExact(report.accelerationTorqueNm.value)} N·m` });
   if (report.effectiveThermalPowerKW?.value) paramRows.push({ node: report.effectiveThermalPowerKW, label: 'Eff Thermal Power', display: `${report.effectiveThermalPowerKW.value.toFixed(2)} kW` });
   if (report.requiredLifeHours?.value) paramRows.push({ node: report.requiredLifeHours, label: 'Required Life', display: `${Math.round(report.requiredLifeHours.value).toLocaleString()} hrs` });
 
@@ -313,8 +314,8 @@ export function exportToPDF(
       t.ratio.toFixed(2),
       `${t.speed.toFixed(1)} RPM`,
       t.torqueSteps,
-      `${Math.round(t.nominalTorque).toLocaleString()} N·m`,
-      `${Math.round(t.maxTorque).toLocaleString()} N·m`
+      `${PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} N·m`,
+      `${PowerTorqueEngine.formatTorqueExact(t.maxTorque)} N·m`
     ]),
     styles: { fontSize: 7, cellPadding: 2 },
     headStyles: { fillColor: SLATE_900, textColor: WHITE, fontSize: 6.5, fontStyle: 'bold' },
@@ -346,7 +347,7 @@ export function exportToPDF(
       `MAGTORQ ${t.selectedGearbox.size} (S${t.selectedGearbox.series})`,
       `${t.selectedGearbox.nominal.toLocaleString()} N·m`,
       `${t.selectedGearbox.rated.toLocaleString()} N·m`,
-      `${t.selectedGearbox.nominal}/${Math.round(t.nominalTorque)} = ${(t.selectedGearbox.nominal / t.nominalTorque).toFixed(2)}  |  ${t.selectedGearbox.rated}/${Math.round(t.maxTorque)} = ${(t.selectedGearbox.rated / t.maxTorque).toFixed(2)}`,
+      `${t.selectedGearbox.nominal}/${PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} = ${(t.selectedGearbox.nominal / t.nominalTorque).toFixed(2)}  |  ${t.selectedGearbox.rated}/${PowerTorqueEngine.formatTorqueExact(t.maxTorque)} = ${(t.selectedGearbox.rated / t.maxTorque).toFixed(2)}`,
       t.safetyFactor.toFixed(2),
       t.safetyFactor >= 1.0 ? 'SAFE' : 'OVERLOADED'
     ]),
@@ -494,9 +495,9 @@ export function exportToExcel(
     ['Service Factor', `${report.serviceFactor.value?.toFixed(2)}`, report.serviceFactor.type, report.serviceFactor.source, report.serviceFactor.reasoning],
   ];
 
-  if (report.outputTorqueNm?.value) paramRows.push(['Output Torque', `${Math.round(report.outputTorqueNm.value)} N·m`, report.outputTorqueNm.type, report.outputTorqueNm.source, report.outputTorqueNm.reasoning]);
-  if (report.rmsTorqueNm?.value) paramRows.push(['RMS Torque', `${Math.round(report.rmsTorqueNm.value)} N·m`, report.rmsTorqueNm.type, report.rmsTorqueNm.source, report.rmsTorqueNm.reasoning]);
-  if (report.accelerationTorqueNm?.value) paramRows.push(['Accel Torque', `${Math.round(report.accelerationTorqueNm.value)} N·m`, report.accelerationTorqueNm.type, report.accelerationTorqueNm.source, report.accelerationTorqueNm.reasoning]);
+  if (report.outputTorqueNm?.value) paramRows.push(['Output Torque', `${PowerTorqueEngine.formatTorqueExact(report.outputTorqueNm.value)} N·m`, report.outputTorqueNm.type, report.outputTorqueNm.source, report.outputTorqueNm.reasoning]);
+  if (report.rmsTorqueNm?.value) paramRows.push(['RMS Torque', `${PowerTorqueEngine.formatTorqueExact(report.rmsTorqueNm.value)} N·m`, report.rmsTorqueNm.type, report.rmsTorqueNm.source, report.rmsTorqueNm.reasoning]);
+  if (report.accelerationTorqueNm?.value) paramRows.push(['Accel Torque', `${PowerTorqueEngine.formatTorqueExact(report.accelerationTorqueNm.value)} N·m`, report.accelerationTorqueNm.type, report.accelerationTorqueNm.source, report.accelerationTorqueNm.reasoning]);
   if (report.effectiveThermalPowerKW?.value) paramRows.push(['Eff Thermal Power', `${report.effectiveThermalPowerKW.value.toFixed(2)} kW`, report.effectiveThermalPowerKW.type, report.effectiveThermalPowerKW.source, report.effectiveThermalPowerKW.reasoning]);
   if (report.requiredLifeHours?.value) paramRows.push(['Required Life', `${Math.round(report.requiredLifeHours.value).toLocaleString()} hrs`, report.requiredLifeHours.type, report.requiredLifeHours.source, report.requiredLifeHours.reasoning]);
 
@@ -510,8 +511,8 @@ export function exportToExcel(
     `Stage ${t.stage}`,
     t.ratio.toFixed(2),
     t.speed.toFixed(1),
-    Math.round(t.nominalTorque),
-    Math.round(t.maxTorque),
+    PowerTorqueEngine.formatTorqueExact(t.nominalTorque),
+    PowerTorqueEngine.formatTorqueExact(t.maxTorque),
     `MAGTORQ ${t.selectedGearbox.size} (S${t.selectedGearbox.series})`,
     t.selectedGearbox.nominal,
     t.selectedGearbox.rated,

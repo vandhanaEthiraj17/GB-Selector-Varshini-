@@ -21,6 +21,7 @@ import {
   VerificationReport 
 } from '../services/verificationEngine';
 import { exportToPDF, exportToExcel } from '../services/reportExportService';
+import { PowerTorqueEngine } from '../services/calculations';
 
 interface RequirementAnalyzerProps {
   onAutoFill: (extractedValues: Partial<ProjectInput>) => void;
@@ -507,7 +508,7 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
         <div class="formula-box">
           Input Torque Equation:<br/>
           Tin = (P × 60000) / (2 × π × Nin)<br/>
-          Steps: Tin = (${powerKW.value} kW × 60000) / (2 × π × ${inputRPM.value} RPM) = ${inputTorque.result.toFixed(2)} N·m
+          Steps: Tin = (${powerKW.value} kW × 60000) / (2 × π × ${inputRPM.value} RPM) = ${PowerTorqueEngine.formatTorqueExact(inputTorque.result)} N·m
         </div>
 
         <table>
@@ -528,8 +529,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                 <td style="text-align: center; font-weight: bold;">${t.ratio.toFixed(2)}</td>
                 <td style="text-align: center;">${t.speed.toFixed(1)} RPM</td>
                 <td>${t.torqueSteps}</td>
-                <td style="text-align: center; font-weight: bold;">${Math.round(t.nominalTorque).toLocaleString()} N·m</td>
-                <td style="text-align: center; font-weight: bold;">${Math.round(t.maxTorque).toLocaleString()} N·m</td>
+                <td style="text-align: center; font-weight: bold;">${PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} N·m</td>
+                <td style="text-align: center; font-weight: bold;">${PowerTorqueEngine.formatTorqueExact(t.maxTorque)} N·m</td>
               </tr>
             `).join('')}
           </tbody>
@@ -554,8 +555,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                 <td style="font-weight: bold; color: #0f172a;">MAGTORQ ${t.selectedGearbox.size} (Series ${t.selectedGearbox.series})</td>
                 <td>Nominal: ${t.selectedGearbox.nominal} N·m<br/>Rated: ${t.selectedGearbox.rated} N·m</td>
                 <td>
-                  Nom Check: ${t.selectedGearbox.nominal} / ${Math.round(t.nominalTorque)} = ${(t.selectedGearbox.nominal / t.nominalTorque).toFixed(2)}<br/>
-                  Rated Check: ${t.selectedGearbox.rated} / ${Math.round(t.maxTorque)} = ${(t.selectedGearbox.rated / t.maxTorque).toFixed(2)}
+                  Nom Check: ${t.selectedGearbox.nominal} / ${PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} = ${(t.selectedGearbox.nominal / t.nominalTorque).toFixed(2)}<br/>
+                  Rated Check: ${t.selectedGearbox.rated} / ${PowerTorqueEngine.formatTorqueExact(t.maxTorque)} = ${(t.selectedGearbox.rated / t.maxTorque).toFixed(2)}
                 </td>
                 <td style="text-align: center; font-weight: bold; color: ${t.safetyFactor >= 1.0 ? '#059669' : '#dc2626'}">
                   ${t.safetyFactor.toFixed(2)}
@@ -952,7 +953,7 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                 <div className="bg-slate-900 border border-slate-900 text-white px-3 py-1.5 rounded-lg text-center shadow-xs text-xs shrink-0">
                                   <div className="text-[8px] font-extrabold text-slate-450 uppercase">Output Drive</div>
                                   <div className="font-extrabold text-white mt-0.5">{reasoningResult.outputRPM.value.toFixed(1)} RPM</div>
-                                  <div className="text-[8.5px] font-bold text-[#ff8c00] mt-0.5">{Math.round(reasoningResult.overallOutputTorque).toLocaleString()} N·m</div>
+                                  <div className="text-[8.5px] font-bold text-[#ff8c00] mt-0.5">{PowerTorqueEngine.formatTorqueExact(reasoningResult.overallOutputTorque)} N·m</div>
                                 </div>
                               </div>
                             </div>
@@ -1057,9 +1058,13 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                               reasoningResult.outputRPM,
                               reasoningResult.totalRatio,
                               reasoningResult.stages,
-                              reasoningResult.serviceFactor
-                            ].map((p, idx) => {
-                              const isNull = p.value === null;
+                              reasoningResult.serviceFactor,
+                              reasoningResult.inputTorqueNm,
+                              reasoningResult.outputTorqueNm,
+                              reasoningResult.shaftSpeedRPM,
+                              reasoningResult.shaftTorqueNm
+                            ].filter((p) => p !== undefined && p !== null).map((p, idx) => {
+                              const isNull = p.value === null || p.value === undefined || (typeof p.value === 'number' && isNaN(p.value));
                               return (
                                 <tr key={idx} className="hover:bg-slate-50/50">
                                   <td className="p-3">
@@ -1074,7 +1079,7 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                     )}
                                   </td>
                                   <td className="p-3 text-center font-extrabold text-slate-900 bg-slate-50/20 whitespace-nowrap">
-                                    {isNull ? 'N/A' : (
+                                    {isNull ? 'UNRESOLVED' : (
                                       p.name.includes('Ratio') 
                                         ? `${p.value!.toFixed(2)}:1`
                                         : p.name.includes('Speed') || p.name.includes('RPM')
@@ -1083,6 +1088,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                         ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} kW`
                                         : p.name.includes('HP')
                                         ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} HP`
+                                        : p.name.includes('Torque')
+                                        ? `${PowerTorqueEngine.formatTorqueExact(p.value!)} N·m`
                                         : p.value
                                     )}
                                   </td>

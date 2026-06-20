@@ -332,6 +332,23 @@ export class PowerTorqueEngine {
     return torqueNm * speedRadS;
   }
 
+  static formatTorqueExact(val: number): string {
+    if (val === undefined || val === null || isNaN(val)) return 'N/A';
+    if (val % 1 === 0) {
+      return val.toLocaleString();
+    }
+    const str = val.toString();
+    if (str.includes('e')) {
+      const fixed = val.toFixed(14).replace(/\.?0+$/, '');
+      const parts = fixed.split('.');
+      parts[0] = Number(parts[0]).toLocaleString();
+      return parts.join('.');
+    }
+    const parts = str.split('.');
+    parts[0] = Number(parts[0]).toLocaleString();
+    return parts.join('.');
+  }
+
   ////////////////////////////////////
   // HP → kW
   ////////////////////////////////////

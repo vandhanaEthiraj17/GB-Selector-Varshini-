@@ -10,16 +10,16 @@ import {
 } from 'lucide-react';
 import { ProjectInput } from '../types/ProjectInput';
 import { extractTextFromFile } from '../services/aiRequirementAnalyzer';
-import { analyzeRequirement, ExtractionResult } from '../api/requirementAnalyzerApi';
-import { 
-  generateAuditReport, 
-  seriesLimits, 
-  EngineeringReport
-} from '../services/engineeringReasoningEngine';
-import { 
-  verifyEngineeringReport, 
-  VerificationReport 
-} from '../services/verificationEngine';
+import { analyzeRequirement } from '../api/requirementAnalyzerApi';
+import type { EngineeringReport } from '../services/engineeringReasoningEngine';
+import type { VerificationReport } from '../services/verificationEngine';
+
+const seriesLimits: Record<string, { min: number; max: number; name: string }> = {
+  s1: { min: 3.75, max: 10.26, name: 'S1' },
+  s2: { min: 4.71, max: 7.58, name: 'S2' },
+  s3: { min: 4.76, max: 5.06, name: 'S3' },
+  s4: { min: 4.00, max: 4.50, name: 'S4' }
+};
 import { exportToPDF, exportToExcel } from '../services/reportExportService';
 
 interface RequirementAnalyzerProps {
@@ -34,7 +34,9 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [reasoningResult, setReasoningResult] = useState<EngineeringReport | null>(null);
   const [verificationReport, setVerificationReport] = useState<VerificationReport | null>(null);
-  const [activeTab, setActiveTab] = useState<'rec' | 'validation' | 'params' | 'trace' | 'limits' | 'verification'>('rec');
+  const [activeTab, setActiveTab] = useState<'rec' | 'validation' | 'params' | 'trace' | 'limits' | 'verification' | 'diagnostics'>('rec');
+  const [lineage, setLineage] = useState<any>(null);
+  const [rawText, setRawText] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -183,31 +185,23 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
     setVerificationReport(null);
     
     try {
-      let result: ExtractionResult;
+      let apiResponse: any;
       try {
-        // Give Gemini longer timeout (8 seconds) if a PDF file is uploaded directly to allow multimodal processing
-        const timeoutMs = file ? 8000 : 3500;
-        result = await timeoutPromise(analyzeRequirement(sourceText, fileBase64, fileMime), timeoutMs);
+        const timeoutMs = file ? 10000 : 6000;
+        apiResponse = await timeoutPromise(analyzeRequirement(sourceText, fileBase64, fileMime), timeoutMs);
       } catch (apiError) {
-        console.warn("AI extraction endpoint failed, timed out, or unavailable. Falling back to local rules engine...", apiError);
-        result = {
-          projectName: 'Local Engine Resolution',
-          powerW: null,
-          inputRadS: null,
-          outputRadS: null,
-          targetRatio: null,
-          outputTorqueNm: null,
-          inputTorqueNm: null,
-          applicationType: null,
-          serviceFactor: null,
-          numberOfStages: null
-        };
+        console.error("AI extraction and reasoning failed:", apiError);
+        alert(`Reasoning failed: ${(apiError as Error).message}`);
+        setLoading(false);
+        return;
       }
       
-      const solution = generateAuditReport(sourceText, result);
-      const verification = verifyEngineeringReport(solution, result);
+      const solution = apiResponse.report;
+      const verification = apiResponse.verification;
       setReasoningResult(solution);
       setVerificationReport(verification);
+      setLineage(apiResponse.lineage || null);
+      setRawText(apiResponse.rawText || '');
       setActiveTab('rec');
       if (file) {
         setUploadStatus('Engineering solution generated successfully!');
@@ -235,6 +229,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
     setUploadStatus('');
     setReasoningResult(null);
     setVerificationReport(null);
+    setLineage(null);
+    setRawText('');
   };
 
   const handleAutoFillClick = () => {
@@ -809,6 +805,17 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                     <CheckCircle className="h-3.5 w-3.5" />
                     Verification
                   </button>
+                  <button
+                    onClick={() => setActiveTab('diagnostics')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                      activeTab === 'diagnostics'
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                    }`}
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                    Diagnostics
+                  </button>
                 </div>
 
                 {/* Tab Contents */}
@@ -919,8 +926,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                               <Badge className={`${reasoningResult.validation.isValid && reasoningResult.stageTraces.every(t => t.safetyFactor >= 1.0) ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-500 hover:bg-red-600'} text-white font-extrabold px-3 py-1 text-xs shadow`}>
                                 {reasoningResult.validation.isValid && reasoningResult.stageTraces.every(t => t.safetyFactor >= 1.0) ? '⚡ Drive Compliant' : '⚠ Action Required'}
                               </Badge>
-                              <div className="text-[10.5px] font-bold text-slate-400 mt-1">
-                                Stages: {reasoningResult.stages.value} Planetary
+                              <div className="text-[10.5px] font-bold text-slate-440 mt-1">
+                                Stages: {reasoningResult.stages.value !== null ? reasoningResult.stages.value : 'N/A'} Planetary
                               </div>
                             </div>
                           </div>
@@ -935,8 +942,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                               <div className="flex items-center gap-2 py-1 overflow-x-auto">
                                 <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-center shadow-xs text-xs shrink-0">
                                   <div className="text-[8px] font-extrabold text-slate-450 uppercase">Input Motor</div>
-                                  <div className="font-extrabold text-slate-700 mt-0.5">{reasoningResult.inputRPM.value} RPM</div>
-                                  <div className="text-[8.5px] font-bold text-[#ff8c00] mt-0.5">{reasoningResult.powerKW.value} kW</div>
+                                  <div className="font-extrabold text-slate-700 mt-0.5">{reasoningResult.inputRPM.value !== null ? reasoningResult.inputRPM.value : 'N/A'} RPM</div>
+                                  <div className="text-[8.5px] font-bold text-[#ff8c00] mt-0.5">{reasoningResult.powerKW.value !== null ? reasoningResult.powerKW.value : 'N/A'} kW</div>
                                 </div>
                                 {reasoningResult.stageTraces.map((d, idx) => (
                                   <React.Fragment key={idx}>
@@ -951,8 +958,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                 <ArrowRight className="h-3.5 w-3.5 text-slate-350 shrink-0" />
                                 <div className="bg-slate-900 border border-slate-900 text-white px-3 py-1.5 rounded-lg text-center shadow-xs text-xs shrink-0">
                                   <div className="text-[8px] font-extrabold text-slate-450 uppercase">Output Drive</div>
-                                  <div className="font-extrabold text-white mt-0.5">{reasoningResult.outputRPM.value.toFixed(1)} RPM</div>
-                                  <div className="text-[8.5px] font-bold text-[#ff8c00] mt-0.5">{Math.round(reasoningResult.overallOutputTorque).toLocaleString()} N·m</div>
+                                  <div className="font-extrabold text-white mt-0.5">{reasoningResult.outputRPM.value !== null ? reasoningResult.outputRPM.value.toFixed(1) : 'N/A'} RPM</div>
+                                  <div className="text-[8.5px] font-bold text-[#ff8c00] mt-0.5">{reasoningResult.overallOutputTorque !== null && reasoningResult.overallOutputTorque !== undefined ? Math.round(reasoningResult.overallOutputTorque).toLocaleString() : 'N/A'} N·m</div>
                                 </div>
                               </div>
                             </div>
@@ -1211,13 +1218,13 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                   Drivetrain Gear Ratio Equation:<br/>
                                   Formula: {reasoningResult.totalRatio.formula}<br/>
                                   Steps: {reasoningResult.totalRatio.calculationSteps}<br/>
-                                  Result: Ratio = {reasoningResult.totalRatio.value.toFixed(2)}
+                                  Result: Ratio = {reasoningResult.totalRatio.value !== null ? reasoningResult.totalRatio.value.toFixed(2) : 'N/A'}
                                 </div>
                                 <div className="bg-slate-50 border-l-2 border-[#ff8c00] p-2.5 rounded-r-lg font-mono text-[11px] font-bold text-slate-800">
                                   Target Speed Resolver:<br/>
                                   Formula: {reasoningResult.outputRPM.formula}<br/>
                                   Steps: {reasoningResult.outputRPM.calculationSteps}<br/>
-                                  Result: OutputRPM = {reasoningResult.outputRPM.value.toFixed(1)} RPM
+                                  Result: OutputRPM = {reasoningResult.outputRPM.value !== null ? reasoningResult.outputRPM.value.toFixed(1) : 'N/A'} RPM
                                 </div>
                               </div>
                             )}
@@ -1632,6 +1639,116 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                           </table>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* TAB 7: EXTRACTION DIAGNOSTICS */}
+                  {activeTab === 'diagnostics' && (
+                    <div className="space-y-4">
+                      <div className="text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono">
+                        MAGTORQ Extraction Diagnostics & Traceability Audit
+                      </div>
+
+                      {/* First-Loss Detection Indicator */}
+                      <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-2">
+                        <div className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1 font-mono">
+                          <AlertTriangle className="h-3.5 w-3.5 text-slate-505" />
+                          First-Loss Detection Audit
+                        </div>
+                        {verificationReport && verificationReport.missingInputs.length > 0 ? (
+                          <div className="text-xs text-red-750 bg-red-50 border border-red-200 p-3 rounded-lg leading-relaxed font-semibold">
+                            <strong>First-Loss Parameter:</strong> '{verificationReport.missingInputs[0]}' is missing. Drivetrain planetary selection and safety calculations are blocked. Please provide this input to proceed.
+                          </div>
+                        ) : verificationReport && verificationReport.criticalFailures.length > 0 ? (
+                          <div className="text-xs text-red-750 bg-red-50 border border-red-200 p-3 rounded-lg leading-relaxed font-semibold">
+                            <strong>First-Loss Validation Error:</strong> '{verificationReport.criticalFailures[0]}'. The configuration failed safety verification.
+                          </div>
+                        ) : (
+                          <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-250 p-3 rounded-lg leading-relaxed font-semibold">
+                            ✓ No extraction losses or validation failures detected. The drivetrain is fully defined and safety verified.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Lineage Table */}
+                      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-900 text-slate-200">
+                              <th className="p-3 font-extrabold">Parameter</th>
+                              <th className="p-3 font-extrabold">Source Location</th>
+                              <th className="p-3 font-extrabold">Method</th>
+                              <th className="p-3 font-extrabold text-center">Confidence</th>
+                              <th className="p-3 font-extrabold">Original Text Snippet & Unit conversion</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-150 bg-white">
+                            {lineage ? (
+                              Object.entries(lineage).map(([key, node]: [string, any]) => {
+                                const isMissing = node.value === null;
+                                return (
+                                  <tr key={key} className="hover:bg-slate-50/50">
+                                    <td className="p-3 font-extrabold text-slate-700">
+                                      {key}
+                                      {isMissing && (
+                                        <Badge className="bg-red-50 text-red-700 border border-red-250 text-[8px] font-black ml-1.5 py-0.5 rounded">
+                                          MISSING
+                                        </Badge>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-slate-600 font-medium whitespace-nowrap">
+                                      {node.sourceLocation || 'N/A'}
+                                    </td>
+                                    <td className="p-3 text-slate-505 font-bold whitespace-nowrap">
+                                      <Badge className="bg-slate-100 text-slate-650 font-black text-[9px] py-0.5 px-2 rounded">
+                                        {node.method}
+                                      </Badge>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <Badge className={`font-extrabold text-[9px] py-0.5 px-2 rounded-full whitespace-nowrap ${
+                                        node.confidence === 'High'
+                                          ? 'bg-emerald-100 border border-emerald-250 text-emerald-700'
+                                          : node.confidence === 'Medium'
+                                          ? 'bg-amber-100 border border-amber-250 text-amber-700'
+                                          : 'bg-red-100 border border-red-250 text-red-750'
+                                      }`}>
+                                        {node.confidence}
+                                      </Badge>
+                                    </td>
+                                    <td className="p-3 text-slate-500 font-medium max-w-[280px]">
+                                      {node.originalTextFragment && (
+                                        <div className="font-mono text-[9px] text-slate-750 bg-slate-50 border border-slate-150 px-1.5 py-0.5 rounded leading-relaxed break-all">
+                                          Snippet: "{node.originalTextFragment}"
+                                        </div>
+                                      )}
+                                      <div className="text-[10px] text-slate-500 leading-relaxed font-semibold mt-1">
+                                        {node.auditExplanation}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="p-4 text-center text-slate-450 font-bold">
+                                  No lineage metadata available. Perform visual drive analysis to trace extraction parameters.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Raw Text Output Preview */}
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono">
+                          Raw Extracted Text & OCR Stream Output
+                        </div>
+                        <div className="border border-slate-200 rounded-xl bg-slate-50 p-4 font-mono text-[10px] text-slate-650 max-h-[180px] overflow-y-auto whitespace-pre-wrap leading-relaxed shadow-inner break-all">
+                          {rawText || "No document text or OCR output cached. Upload a document specification file."}
+                        </div>
+                      </div>
+
                     </div>
                   )}
 

@@ -26,6 +26,7 @@ export class ApplicationKnowledgeEngine {
     // Check specific/multi-word ones first
     if (lower.includes('bucket elevator')) return 'BUCKET ELEVATOR';
     if (lower.includes('screw conveyor')) return 'SCREW CONVEYOR';
+    if (lower.includes('chain conveyor') || lower.includes('apron feeder')) return 'CONVEYOR';
     if (lower.includes('stacker reclaimer') || lower.includes('reclaimer') || lower.includes('stacker')) return 'STACKER RECLAIMER';
     if (lower.includes('screw jack') || lower.includes('screwjack') || lower.includes('jack')) return 'SCREW JACK';
 
@@ -33,7 +34,7 @@ export class ApplicationKnowledgeEngine {
     if (lower.includes('conveyor') || lower.includes('belt')) return 'CONVEYOR';
     if (lower.includes('winch')) return 'WINCH';
     if (lower.includes('hoist') || lower.includes('crane') || lower.includes('lift')) return 'HOIST';
-    if (lower.includes('agitator')) return 'AGITATOR';
+    if (lower.includes('agitator') || lower.includes('thickener') || lower.includes('clarifier') || lower.includes('reactor')) return 'MIXER';
     if (lower.includes('mixer')) return 'MIXER';
     if (lower.includes('pump')) return 'PUMP';
     if (lower.includes('fan') || lower.includes('blower')) return 'FAN';
@@ -58,6 +59,12 @@ export class ApplicationKnowledgeEngine {
     // Run the Derivation Engine to resolve whatever can be derived
     const derivationResult = MissingParameterResolutionEngine.resolve(extractedParams, userProvidedKeys);
     const resolved = derivationResult.derivedParameters;
+
+    console.log("[SF TRACE]", {
+      stage: "ApplicationKnowledgeEngine",
+      value: resolved.serviceFactor !== undefined ? resolved.serviceFactor : null,
+      source: resolved.serviceFactor !== undefined ? "derived" : "unresolved"
+    });
 
     if (resolved.powerW !== undefined && resolved.powerW !== null) {
       resolved.powerKW = resolved.powerW / 1000;

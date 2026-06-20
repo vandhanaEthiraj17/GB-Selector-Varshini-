@@ -1,5 +1,5 @@
 import { Gearbox } from '../types/Gearbox';
-import { gearboxDatabase } from '../data/gearboxDatabase';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 
 /**
  * Selects the optimal gearbox model for a given stage based on torque capacity requirements.
@@ -12,6 +12,7 @@ export async function selectGearbox(
   stageIndex: number,
   stageRatio: number
 ): Promise<Gearbox> {
+  const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
   const seriesNum = parseInt(seriesVal.replace('s', ''));
   let filteredGearboxes = gearboxDatabase.filter(g => g.series === seriesNum);
 

@@ -1034,8 +1034,8 @@ export class ParameterExtractionEngine {
     //////////////////////////////////////////////////
 
     const inputRpmPatterns = [
-      /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
+      /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
     ];
 
     let extractedInputRPM: number | null = null;
@@ -1043,6 +1043,12 @@ export class ParameterExtractionEngine {
     for (const p of inputRpmPatterns) {
       const m = text.match(p);
       if (m) {
+        const matchIndex = m.index || 0;
+        const startIndex = Math.max(0, matchIndex - 30);
+        const context = text.slice(startIndex, matchIndex + m[0].length).toLowerCase();
+        if (context.includes('driven speed') || context.includes('driven') || context.includes('output') || context.includes('lss') || context.includes('low speed') || context.includes('drum speed') || context.includes('equipment speed') || context.includes('equipment')) {
+          continue;
+        }
         let val = parseFloat(m[1]);
         const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
         const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
@@ -1055,8 +1061,8 @@ export class ParameterExtractionEngine {
     }
 
     const outputRpmPatterns = [
-      /(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
+      /(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
     ];
 
     let extractedOutputRPM: number | null = null;
@@ -1064,6 +1070,12 @@ export class ParameterExtractionEngine {
     for (const p of outputRpmPatterns) {
       const m = text.match(p);
       if (m) {
+        const matchIndex = m.index || 0;
+        const startIndex = Math.max(0, matchIndex - 30);
+        const context = text.slice(startIndex, matchIndex + m[0].length).toLowerCase();
+        if (context.includes('input') || context.includes('motor') || context.includes('inlet') || context.includes('sync') || context.includes('high speed') || context.includes('hss') || context.includes('driver') || context.includes('prime mover')) {
+          continue;
+        }
         let val = parseFloat(m[1]);
         const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
         const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
@@ -1087,6 +1099,12 @@ export class ParameterExtractionEngine {
       for (const p of outRpmPatterns) {
         const m = text.match(p);
         if (m) {
+          const matchIndex = m.index || 0;
+          const startIndex = Math.max(0, matchIndex - 30);
+          const context = text.slice(startIndex, matchIndex + m[0].length).toLowerCase();
+          if (context.includes('input') || context.includes('motor') || context.includes('inlet') || context.includes('sync') || context.includes('high speed') || context.includes('hss') || context.includes('driver') || context.includes('prime mover')) {
+            continue;
+          }
           let val = parseFloat(m[1]);
           const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
           const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
@@ -1110,6 +1128,12 @@ export class ParameterExtractionEngine {
       for (const p of inRpmPatterns) {
         const m = text.match(p);
         if (m) {
+          const matchIndex = m.index || 0;
+          const startIndex = Math.max(0, matchIndex - 30);
+          const context = text.slice(startIndex, matchIndex + m[0].length).toLowerCase();
+          if (context.includes('driven speed') || context.includes('driven') || context.includes('output') || context.includes('lss') || context.includes('low speed') || context.includes('drum speed') || context.includes('equipment speed') || context.includes('equipment')) {
+            continue;
+          }
           let val = parseFloat(m[1]);
           const numIndex = m.index! + m[0].indexOf(m[1]) + m[1].length;
           const trailing = text.slice(numIndex, numIndex + 10).toLowerCase().trim();
@@ -1348,8 +1372,9 @@ export class ParameterExtractionEngine {
     // APPLICATION
     //////////////////////////////////////////////////
 
-    const sfCondRegex = /(?:service\s+factor|SF|factor)\s*[:=\s]*\s*(?:is\s+|of\s+)?(less\s+than|greater\s+than|equal\s+to|minimum|maximum|min\b|max\b|<=|>=|<|>|=)\s*(?:is\s+|of\s+)?(\d+(?:\.\d+)?)/i;
+    const sfCondRegex = /(?:service\s+factor|SF|factor|application\s+factor|duty\s+factor|fb|service\s+coefficient|load\s+factor|application\s+service\s+factor|agma\s+service\s+factor|required\s+service\s+factor|minimum\s+service\s+factor|design\s+service\s+factor)\s*[:=\s]*\s*(?:is\s+|of\s+)?\s*(less\s+than|greater\s+than|equal\s+to|minimum|maximum|min\b|max\b|<=|>=|<|>|=)\s*(?:is\s+|of\s+)?\s*(\d+(?:\.\d+)?)/i;
     const sfCondMatch = text.match(sfCondRegex);
+    let sfSimpleMatch: RegExpMatchArray | null = null;
 
     if (sfCondMatch) {
       const condRaw = sfCondMatch[1].toLowerCase();
@@ -1368,13 +1393,35 @@ export class ParameterExtractionEngine {
       result.serviceFactorCondition = condition;
       result.serviceFactor = parseFloat(sfCondMatch[2]);
     } else {
-      const sfSimpleRegex = /(?:service\s+factor|SF|factor)\s*[:=\s]*\s*(?:of|is\s+)?(\d+(?:\.\d+)?)/i;
-      const sfSimpleMatch = text.match(sfSimpleRegex);
+      const sfSimpleRegex = /(?:service\s+factor|SF|factor|application\s+factor|duty\s+factor|fb|service\s+coefficient|load\s+factor|application\s+service\s+factor|agma\s+service\s+factor|required\s+service\s+factor|minimum\s+service\s+factor|design\s+service\s+factor)\s*[:=\s]*\s*(?:of\s+|is\s+)?\s*(\d+(?:\.\d+)?)/i;
+      sfSimpleMatch = text.match(sfSimpleRegex);
       if (sfSimpleMatch) {
         result.serviceFactor = parseFloat(sfSimpleMatch[1]);
         result.serviceFactorCondition = null;
       }
     }
+
+    const sfAliases = [
+      'service factor', 'application factor', 'duty factor', 'fb', 'service coefficient',
+      'load factor', 'application service factor', 'agma service factor', 'required service factor',
+      'minimum service factor', 'design service factor', 'sf', 'factor'
+    ];
+    let matchedSfAlias: string | null = null;
+    if (sfCondMatch) {
+      matchedSfAlias = sfAliases.find(alias => sfCondMatch[0].toLowerCase().includes(alias)) || null;
+    } else if (sfSimpleMatch) {
+      matchedSfAlias = sfAliases.find(alias => sfSimpleMatch[0].toLowerCase().includes(alias)) || null;
+    }
+    if (matchedSfAlias) {
+      console.log(`[SF TRACE] Alias Matched: ${matchedSfAlias}`);
+      console.log(`[SF TRACE] Value Extracted: ${result.serviceFactor} from regex`);
+    }
+
+    console.log("[SF TRACE]", {
+      stage: "ParameterExtractionEngine",
+      value: result.serviceFactor !== undefined ? result.serviceFactor : null,
+      source: result.serviceFactor !== undefined ? (sfCondMatch ? "regex_conditional" : "regex_simple") : "unextracted"
+    });
 
     result.application = ApplicationDetectionEngine.detect(text);
 
@@ -1394,7 +1441,10 @@ export class ApplicationDetectionEngine {
       value.includes("conveyor") ||
       value.includes("belt") ||
       value.includes("bucket elevator") ||
-      value.includes("flight")
+      value.includes("flight") ||
+      value.includes("apron feeder") ||
+      value.includes("chain conveyor") ||
+      value.includes("screw conveyor")
     ) {
       return ApplicationType.CONVEYOR;
     }
@@ -1428,7 +1478,10 @@ export class ApplicationDetectionEngine {
     if (
       value.includes("agitator") ||
       value.includes("mixer") ||
-      value.includes("ribbon")
+      value.includes("ribbon") ||
+      value.includes("thickener") ||
+      value.includes("clarifier") ||
+      value.includes("reactor")
     ) {
       return ApplicationType.MIXER;
     }
@@ -1679,14 +1732,27 @@ export class MissingDataResolutionEngine {
   static resolveServiceFactor(input: GearboxInput): number {
     // 1. Direct input found, do not perform calculations
     if (input.serviceFactor) {
+      console.log("[SF TRACE]", {
+        stage: "MissingDataResolutionEngine",
+        value: input.serviceFactor,
+        source: "direct_input"
+      });
       return input.serviceFactor;
     }
 
-    return ServiceFactorEngine.calculate(
+    const resolved = ServiceFactorEngine.calculate(
       input.applicationType,
       input.dutyHoursPerDay,
       input.startsPerHour,
     );
+
+    console.log("[SF TRACE]", {
+      stage: "MissingDataResolutionEngine",
+      value: resolved,
+      source: "derived_fallback"
+    });
+
+    return resolved;
   }
 }
 
@@ -1721,7 +1787,7 @@ console.log(extracted);
 // GEARBOX DATABASE MODEL
 //////////////////////////////////////////////////////////////
 
-import { gearboxDatabase } from "../data/gearboxDatabase";
+import { EngineeringDatabaseService } from "./EngineeringDatabaseService";
 
 export interface GearboxDatabaseRecord {
   model_id: string;
@@ -1752,6 +1818,7 @@ export class GearboxSelectionEngine {
     // Determine the required stage count for the target ratio
     const stageCount = StageCountEngine.determineStageCount(targetRatio);
 
+    const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
     // Filter actual MAGTORQ gearbox database by series matching stage count
     const filtered = gearboxDatabase.filter((g) => g.series === stageCount);
 
@@ -1872,6 +1939,7 @@ export class CandidateRankingEngine {
         let D_thermal = 0.5;
         let D_ratio = 0.0;
 
+        const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
         const gb = gearboxDatabase.find(g => g.size === c.model_id);
         if (gb) {
           if (input && input.powerW && gb.thermal_capacity_kw) {
@@ -2068,39 +2136,7 @@ export class EngineeringValidationEngine {
 // TEST CASE
 //////////////////////////////////////////////////////////////
 
-const confidence = ConfidenceScoringEngine.calculate({
-  powerDerived: false,
-
-  rpmDerived: true,
-
-  serviceFactorDerived: true,
-
-  ratioCalculated: true,
-
-  applicationInferred: false,
-
-  multipleMissing: false,
-
-  noValidationData: false,
-});
-
-console.log("Confidence Score:", confidence);
-
-console.log(
-  "Confidence Level:",
-  ConfidenceScoringEngine.confidenceLevel(confidence),
-);
-
-const candidates = GearboxSelectionEngine.selectCandidates(
-  14042,
-  21063,
-  88.5,
-  1440,
-);
-
-console.log("Candidates:", candidates);
-
-console.log("Ranked:", CandidateRankingEngine.rank(candidates));
+// Top-level debug executions removed to prevent database lookup on module import.
 
 /***********************************************************************
  * MAGTORQ GEARBOX SELECTOR
@@ -2494,49 +2530,5 @@ export function runGearboxSelector(input: GearboxInput): EngineeringReport {
   return GearboxSelectorEngine.run(input);
 }
 
-try {
-  const conveyorExample = runGearboxSelector({
-    applicationType: "belt conveyor",
-
-    loadType: "variable",
-
-    powerW: 15000,
-
-    inputRadS: 1440 * 2 * Math.PI / 60,
-
-    outputRadS: 20 * 2 * Math.PI / 60,
-
-    dutyHoursPerDay: 12,
-
-    startsPerHour: 4,
-  });
-
-  console.log("Conveyor Example Selected Gearbox:", conveyorExample.summary.selected_gearbox);
-} catch (e) {
-  console.error("Conveyor Example failed:", e);
-}
-
-try {
-  const screwJackExample = runGearboxSelector({
-    applicationType: "screw jack",
-
-    loadType: "uniform",
-
-    axialLoadN: 35500,
-
-    screwPitchM: 0.006,
-
-    inputRadS: 910 * 2 * Math.PI / 60,
-
-    linearVelocityMS: 0.005,
-
-    dutyHoursPerDay: 8,
-
-    startsPerHour: 2,
-  });
-
-  console.log("Screw Jack Example Selected Gearbox:", screwJackExample.summary.selected_gearbox);
-} catch (e) {
-  console.error("Screw Jack Example failed:", e);
-}
+// Top-level conveyor and screw jack example runs removed to prevent database lookup on module import.
 

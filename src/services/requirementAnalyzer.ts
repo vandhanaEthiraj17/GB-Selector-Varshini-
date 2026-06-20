@@ -22,12 +22,28 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
 
   // 2. Extract Input Speed in RPM
   let extractedInputRPM: number | undefined;
-  const inputSpeedMatch = text.match(/(?:input|motor|inlet)\s+speed\s+(?:is\s+)?(\d+(?:\.\d+)?)\s*RPM/i);
-  const rpmMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*RPM/gi)];
+  const inputSpeedMatch = text.match(/(?:(?:input|motor|inlet|high\s+speed\s+shaft|synchronous|prime\s+mover|driver|hss)\s+speed|hss)\s*[:=\s]*\s*(?:is\s+)?\s*(\d+(?:\.\d+)?)\s*RPM/i);
+  
+  // Exclude output speed terms from rpmMatches
+  const rpmMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*RPM/gi)]
+    .filter(match => {
+      const matchText = match[0].toLowerCase();
+      const startIndex = Math.max(0, match.index! - 30);
+      const context = text.slice(startIndex, match.index! + match[0].length + 30).toLowerCase();
+      if (context.includes('driven speed') || context.includes('driven') || context.includes('output') || context.includes('lss') || context.includes('low speed') || context.includes('drum speed') || context.includes('equipment speed')) {
+        return false;
+      }
+      return true;
+    });
   
   if (inputSpeedMatch) {
-    extractedInputRPM = parseFloat(inputSpeedMatch[1]);
-  } else if (rpmMatches.length > 0) {
+    const matchText = inputSpeedMatch[0].toLowerCase();
+    if (!matchText.includes('driven speed') && !matchText.includes('driven') && !matchText.includes('output') && !matchText.includes('lss') && !matchText.includes('low speed') && !matchText.includes('drum speed') && !matchText.includes('equipment speed')) {
+      extractedInputRPM = parseFloat(inputSpeedMatch[1]);
+    }
+  }
+  
+  if (!extractedInputRPM && rpmMatches.length > 0) {
     extractedInputRPM = parseFloat(rpmMatches[0][1]);
   }
 
@@ -36,11 +52,18 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
   }
 
   // 3. Extract Output Speed / Ratio
-  const outputSpeedMatch = text.match(/(?:output|target|final|required|conveyor)\s+speed\s+(?:is\s+)?(\d+(?:\.\d+)?)\s*RPM/i);
-  if (outputSpeedMatch && extractedInputRPM) {
-    const outRPM = parseFloat(outputSpeedMatch[1]);
-    if (outRPM > 0) {
-      totalRatio = parseFloat((extractedInputRPM / outRPM).toFixed(2));
+  const outputSpeedMatch = text.match(/(?:output|target|final|required|conveyor|driven\s+equipment|driven|low\s+speed\s+shaft|lss|drum|equipment)\s+speed\s+(?:is\s+)?(\d+(?:\.\d+)?)\s*RPM/i);
+  let resolvedOutputRPM: number | undefined;
+  if (outputSpeedMatch) {
+    const matchText = outputSpeedMatch[0].toLowerCase();
+    if (!matchText.includes('input') && !matchText.includes('motor') && !matchText.includes('inlet') && !matchText.includes('sync') && !matchText.includes('high speed') && !matchText.includes('hss') && !matchText.includes('driver') && !matchText.includes('prime mover')) {
+      resolvedOutputRPM = parseFloat(outputSpeedMatch[1]);
+    }
+  }
+
+  if (resolvedOutputRPM && extractedInputRPM) {
+    if (resolvedOutputRPM > 0) {
+      totalRatio = parseFloat((extractedInputRPM / resolvedOutputRPM).toFixed(2));
     }
   } else {
     // Check for direct ratio mention like "ratio of 50" or "gear ratio is 45" or "10 : 1"
@@ -52,7 +75,7 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
 
   // 4. Extract Service Factor
   let serviceFactorCondition: string | null = null;
-  const sfCondRegex = /(?:service\s+factor|SF|factor)\s+(?:is\s+|of\s+)?(less\s+than|greater\s+than|equal\s+to|minimum|maximum|min\b|max\b|<=|>=|<|>|=)\s*(?:is\s+|of\s+)?(\d+(?:\.\d+)?)/i;
+  const sfCondRegex = /(?:service\s+factor|SF|factor|application\s+factor|duty\s+factor|fb|service\s+coefficient|load\s+factor|application\s+service\s+factor|agma\s+service\s+factor|required\s+service\s+factor|minimum\s+service\s+factor|design\s+service\s+factor)\s*[:=\s]*\s*(?:is\s+|of\s+)?\s*(less\s+than|greater\s+than|equal\s+to|minimum|maximum|min\b|max\b|<=|>=|<|>|=)\s*(?:is\s+|of\s+)?\s*(\d+(?:\.\d+)?)/i;
   const sfCondMatch = text.match(sfCondRegex);
 
   if (sfCondMatch) {
@@ -70,7 +93,7 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
     }
     serviceFactor = parseFloat(sfCondMatch[2]);
   } else {
-    const sfSimpleMatch = text.match(/(?:service\s+factor|SF|factor)\s+(?:of|is\s+)?(\d+(?:\.\d+)?)/i);
+    const sfSimpleMatch = text.match(/(?:service\s+factor|SF|factor|application\s+factor|duty\s+factor|fb|service\s+coefficient|load\s+factor|application\s+service\s+factor|agma\s+service\s+factor|required\s+service\s+factor|minimum\s+service\s+factor|design\s+service\s+factor)\s*[:=\s]*\s*(?:of\s+|is\s+)?\s*(\d+(?:\.\d+)?)/i);
     if (sfSimpleMatch) {
       serviceFactor = parseFloat(sfSimpleMatch[1]);
     }

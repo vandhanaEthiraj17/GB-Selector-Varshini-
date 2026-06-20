@@ -12,6 +12,14 @@ export interface ExtractionResult {
   serviceFactorCondition?: string | null;
 }
 
+export interface AnalysisResponse {
+  extracted: ExtractionResult;
+  report: any;
+  verification: any;
+  lineage?: any;
+  rawText?: string;
+}
+
 /**
  * Sends extracted specifications text to the backend proxy for AI analysis.
  * This is decoupled from the UI to support future integrations with ERP/CRM.
@@ -20,7 +28,7 @@ export async function analyzeRequirement(
   text: string,
   fileData?: string | null,
   mimeType?: string | null
-): Promise<ExtractionResult> {
+): Promise<AnalysisResponse> {
   const response = await fetch('/api/analyze-requirement', {
     method: 'POST',
     headers: {
@@ -34,6 +42,7 @@ export async function analyzeRequirement(
     throw new Error(errorBody.error || `HTTP error! status: ${response.status}`);
   }
 
-  const result: ExtractionResult = await response.json();
+  const result: AnalysisResponse = await response.json();
   return result;
 }
+

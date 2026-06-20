@@ -16,7 +16,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ProjectInput } from '../types/ProjectInput';
 import { CalculationResult, StageDetail } from '../types/CalculationResult';
-import { getStageDetails } from '../services/gearboxCalculator';
 import { ArrowRight, Layers, ShieldCheck, Gauge, Zap } from 'lucide-react';
 
 interface StageDetailsModalProps {
@@ -43,7 +42,20 @@ export const StageDetailsModal: React.FC<StageDetailsModalProps> = ({
       Promise.resolve().then(() => {
         if (active) setLoading(true);
       });
-      getStageDetails(inputValues, selectedOption)
+      fetch('/api/stage-details', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inputs: inputValues,
+          selectedOption
+        })
+      })
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch stage details');
+          return res.json();
+        })
         .then(res => {
           if (active) {
             setDetails(res);

@@ -1,5 +1,5 @@
 import { Gearbox, GearboxInput } from '../types/Gearbox';
-import { gearboxDatabase } from '../data/gearboxDatabase';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 import {
   PowerTorqueEngine,
   MotorSpeedEngine,
@@ -186,6 +186,7 @@ export function selectGearboxSync(
   stageIndex: number,
   stageRatio: number
 ): Gearbox {
+  const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
   const seriesNum = parseInt(seriesVal.replace('s', ''));
   let filteredGearboxes = gearboxDatabase.filter(g => g.series === seriesNum);
 
@@ -411,7 +412,8 @@ export function generateAuditReport(
     serviceFactorCondition?: string | null;
     outputTorqueNm?: number | null;
     inputTorqueNm?: number | null;
-  }
+  },
+  lineage?: any
 ): EngineeringReport {
   rawText = preprocessTextRanges(rawText);
   const normText = rawText.toLowerCase();
@@ -556,6 +558,15 @@ export function generateAuditReport(
     }
   }
 
+  console.log(`[SF TRACE] Merge Result: ${initialParams.serviceFactor !== undefined ? initialParams.serviceFactor : 'none'} from merge layer`);
+  console.log("[SF TRACE]", {
+    stage: "MergeLayer",
+    value: initialParams.serviceFactor !== undefined ? initialParams.serviceFactor : null,
+    source: initialParams.serviceFactor !== undefined 
+      ? (extracted.serviceFactor !== null && extracted.serviceFactor !== undefined && extracted.serviceFactor > 0 ? "extracted_canonical" : "local_extracted_regex")
+      : "unmerged"
+  });
+
   if (extracted.numberOfStages !== null && extracted.numberOfStages !== undefined && extracted.numberOfStages > 0) {
     initialParams.stages = extracted.numberOfStages;
     userProvidedKeys.add('stages');
@@ -670,24 +681,28 @@ export function generateAuditReport(
   let inputRPMSteps = '';
   let inputRPMReasoning = '';
 
-  const derivedInputRPMTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('inputRPM'));
-  if (derivedInputRPMTrace) {
-    resolvedInputRPM = derivedInputRPMTrace.value;
-    inputRPMType = 'ENGINE_RULE';
-    inputRPMSource = derivedInputRPMTrace.ruleName;
-    inputRPMFormula = derivedInputRPMTrace.formulaUsed;
-    inputRPMSteps = derivedInputRPMTrace.outputProduced;
-    const rule = derivationRules.find(r => r.id === derivedInputRPMTrace.ruleId);
-    inputRPMReasoning = rule ? rule.auditDescription : 'Resolved via engineering derivation rules.';
-  } else if (resolved.inputRPM !== undefined && resolved.inputRPM !== null) {
-    resolvedInputRPM = resolved.inputRPM;
-    inputRPMReasoning = `Resolved input motor speed of ${resolvedInputRPM} RPM.`;
-  } else if (extInputRPM !== null && extInputRPM !== undefined && extInputRPM > 0) {
+  if (extInputRPM !== null && extInputRPM !== undefined && extInputRPM > 0) {
     resolvedInputRPM = extInputRPM;
+    inputRPMType = 'EXTRACTED';
     inputRPMReasoning = `Customer specified explicit motor speed of ${resolvedInputRPM} RPM.`;
   } else if (localExtInputRPM !== undefined && localExtInputRPM > 0) {
     resolvedInputRPM = localExtInputRPM;
+    inputRPMType = 'EXTRACTED';
     inputRPMReasoning = `Extracted speed of ${resolvedInputRPM} RPM from raw text.`;
+  } else if (resolved.inputRPM !== undefined && resolved.inputRPM !== null) {
+    const derivedInputRPMTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('inputRPM'));
+    if (derivedInputRPMTrace) {
+      resolvedInputRPM = derivedInputRPMTrace.value;
+      inputRPMType = 'ENGINE_RULE';
+      inputRPMSource = derivedInputRPMTrace.ruleName;
+      inputRPMFormula = derivedInputRPMTrace.formulaUsed;
+      inputRPMSteps = derivedInputRPMTrace.outputProduced;
+      const rule = derivationRules.find(r => r.id === derivedInputRPMTrace.ruleId);
+      inputRPMReasoning = rule ? rule.auditDescription : 'Resolved via engineering derivation rules.';
+    } else {
+      resolvedInputRPM = resolved.inputRPM;
+      inputRPMReasoning = `Resolved input motor speed of ${resolvedInputRPM} RPM.`;
+    }
   } else if (extPoles !== undefined && extPoles !== null && extPoles > 0) {
     // poles synchronization speed calculation: (120 * f) / poles
     const syncSpeedRPM = (120 * frequencyHz) / extPoles;
@@ -724,24 +739,28 @@ export function generateAuditReport(
   let outputRPMSteps = '';
   let outputRPMReasoning = '';
 
-  const derivedOutputRPMTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('outputRPM'));
-  if (derivedOutputRPMTrace) {
-    resolvedOutputRPM = derivedOutputRPMTrace.value;
-    outputRPMType = 'ENGINE_RULE';
-    outputRPMSource = derivedOutputRPMTrace.ruleName;
-    outputRPMFormula = derivedOutputRPMTrace.formulaUsed;
-    outputRPMSteps = derivedOutputRPMTrace.outputProduced;
-    const rule = derivationRules.find(r => r.id === derivedOutputRPMTrace.ruleId);
-    outputRPMReasoning = rule ? rule.auditDescription : 'Resolved via engineering derivation rules.';
-  } else if (resolved.outputRPM !== undefined && resolved.outputRPM !== null) {
-    resolvedOutputRPM = resolved.outputRPM;
-    outputRPMReasoning = `Resolved output speed of ${resolvedOutputRPM} RPM.`;
-  } else if (extOutputRPM !== null && extOutputRPM !== undefined && extOutputRPM > 0) {
+  if (extOutputRPM !== null && extOutputRPM !== undefined && extOutputRPM > 0) {
     resolvedOutputRPM = extOutputRPM;
+    outputRPMType = 'EXTRACTED';
     outputRPMReasoning = `Extracted explicit target output speed of ${resolvedOutputRPM} RPM.`;
   } else if (localExtOutputRPM !== undefined && localExtOutputRPM > 0) {
     resolvedOutputRPM = localExtOutputRPM;
+    outputRPMType = 'EXTRACTED';
     outputRPMReasoning = `Extracted target output speed of ${resolvedOutputRPM} RPM from text.`;
+  } else if (resolved.outputRPM !== undefined && resolved.outputRPM !== null) {
+    const derivedOutputRPMTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('outputRPM'));
+    if (derivedOutputRPMTrace) {
+      resolvedOutputRPM = derivedOutputRPMTrace.value;
+      outputRPMType = 'ENGINE_RULE';
+      outputRPMSource = derivedOutputRPMTrace.ruleName;
+      outputRPMFormula = derivedOutputRPMTrace.formulaUsed;
+      outputRPMSteps = derivedOutputRPMTrace.outputProduced;
+      const rule = derivationRules.find(r => r.id === derivedOutputRPMTrace.ruleId);
+      outputRPMReasoning = rule ? rule.auditDescription : 'Resolved via engineering derivation rules.';
+    } else {
+      resolvedOutputRPM = resolved.outputRPM;
+      outputRPMReasoning = `Resolved output speed of ${resolvedOutputRPM} RPM.`;
+    }
   }
 
   // Gear Ratio
@@ -752,24 +771,28 @@ export function generateAuditReport(
   let ratioSteps = '';
   let ratioReasoning = '';
 
-  const derivedRatioTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('totalRatio'));
-  if (derivedRatioTrace) {
-    resolvedRatio = derivedRatioTrace.value;
-    ratioType = 'ENGINE_RULE';
-    ratioSource = derivedRatioTrace.ruleName;
-    ratioFormula = derivedRatioTrace.formulaUsed;
-    ratioSteps = derivedRatioTrace.outputProduced;
-    const rule = derivationRules.find(r => r.id === derivedRatioTrace.ruleId);
-    ratioReasoning = rule ? rule.auditDescription : 'Resolved via engineering derivation rules.';
-  } else if (resolved.totalRatio !== undefined && resolved.totalRatio !== null) {
-    resolvedRatio = resolved.totalRatio;
-    ratioReasoning = `Resolved target gear ratio of ${resolvedRatio}:1.`;
-  } else if (extracted.targetRatio !== null && extracted.targetRatio !== undefined && extracted.targetRatio > 0) {
+  if (extracted.targetRatio !== null && extracted.targetRatio !== undefined && extracted.targetRatio > 0) {
     resolvedRatio = extracted.targetRatio;
+    ratioType = 'EXTRACTED';
     ratioReasoning = `Extracted explicit target gear ratio of ${resolvedRatio}:1.`;
   } else if (localExtracted.totalRatio !== undefined && localExtracted.totalRatio > 0) {
     resolvedRatio = localExtracted.totalRatio;
+    ratioType = 'EXTRACTED';
     ratioReasoning = `Extracted target gear ratio of ${resolvedRatio}:1 from text.`;
+  } else if (resolved.totalRatio !== undefined && resolved.totalRatio !== null) {
+    const derivedRatioTrace = derivationResult.traces.find(t => t.outputProduced.startsWith('totalRatio'));
+    if (derivedRatioTrace) {
+      resolvedRatio = derivedRatioTrace.value;
+      ratioType = 'ENGINE_RULE';
+      ratioSource = derivedRatioTrace.ruleName;
+      ratioFormula = derivedRatioTrace.formulaUsed;
+      ratioSteps = derivedRatioTrace.outputProduced;
+      const rule = derivationRules.find(r => r.id === derivedRatioTrace.ruleId);
+      ratioReasoning = rule ? rule.auditDescription : 'Resolved via engineering derivation rules.';
+    } else {
+      resolvedRatio = resolved.totalRatio;
+      ratioReasoning = `Resolved target gear ratio of ${resolvedRatio}:1.`;
+    }
   }
 
   // ─── Three Speed Parameter Resolution Engine ───
@@ -1236,7 +1259,11 @@ ${notes}`);
   const sfTargetVal = localExtracted.serviceFactor !== undefined ? localExtracted.serviceFactor : (extracted.serviceFactor !== null && extracted.serviceFactor !== undefined ? extracted.serviceFactor : null);
   const sfCondition = localExtracted.serviceFactorCondition !== undefined ? localExtracted.serviceFactorCondition : (extracted.serviceFactorCondition || null);
 
-  if (sfTargetVal !== null && sfCondition) {
+  if (sfTargetVal !== null && !sfCondition) {
+    resolvedSF = sfTargetVal;
+    sfType = 'EXTRACTED';
+    sfReasoning = `Directly extracted explicit service factor safety coefficient of ${resolvedSF} from document.`;
+  } else if (sfTargetVal !== null && sfCondition) {
     let baseSF = 1.5;
     let baseSFFormula = 'N/A';
     let baseSFSteps = '';
@@ -1260,7 +1287,7 @@ ${notes}`);
     }
 
     resolvedSF = baseSF;
-    sfType = 'CALCULATED';
+    sfType = 'EXTRACTED';
     sfSource = 'Service Factor Condition Resolver';
     sfFormula = baseSFFormula;
     sfSteps = baseSFSteps;
@@ -1319,6 +1346,13 @@ ${notes}`);
     sfSteps = `Resulting SF = ${resolvedSF}`;
     assumptions.push({ parameter: 'Service Factor', assumption: `${resolvedSF}`, reason: `Suggested based on detected application type (${applicationType}).` });
   }
+
+  console.log(`[SF TRACE] Resolution Decision: ${resolvedSF} resolved via rules: ${sfFormula}`);
+  console.log("[SF TRACE]", {
+    stage: "EngineeringReasoningEngine",
+    value: resolvedSF,
+    source: sfSource
+  });
 
   if (resolvedInputRPM === null || resolvedInputRPM === undefined) {
     assumptions.push({
@@ -1414,8 +1448,26 @@ ${notes}`);
     return { type: defaultType, confidence: determineConf(defaultType, defaultVal) };
   };
 
+  const getLineageNode = <T,>(key: string, defaultNode: AuditParameterNode<T>): AuditParameterNode<T> => {
+    if (lineage && lineage[key] && lineage[key].value !== null) {
+      const l = lineage[key];
+      return {
+        name: defaultNode.name,
+        value: (l.value !== null && l.value !== undefined ? l.value : defaultNode.value) as T,
+        type: l.method === 'AI_GEMINI' ? 'EXTRACTED' : 'EXTRACTED',
+        source: l.sourceLocation,
+        formula: defaultNode.formula,
+        calculationSteps: l.auditExplanation,
+        confidence: l.confidence,
+        reasoning: l.auditExplanation,
+        detectedText: l.originalTextFragment
+      };
+    }
+    return defaultNode;
+  };
+
   const powerMeta = getTraceConfAndType('powerKW', powerType, resolvedPower);
-  const powerNode: AuditParameterNode<number> = {
+  const powerNode = getLineageNode<number>('powerKW', {
     name: 'Power (kW)',
     value: resolvedPower!,
     type: powerMeta.type,
@@ -1424,9 +1476,9 @@ ${notes}`);
     calculationSteps: powerSteps || `${resolvedPower} kW`,
     confidence: powerMeta.confidence,
     reasoning: powerReasoning || 'Power rating could not be resolved.'
-  };
+  });
 
-  const motorHPNode: AuditParameterNode<number | null> = {
+  const motorHPNode = getLineageNode<number | null>('motorHP', {
     name: 'Motor HP',
     value: extHP || (resolvedPower ? resolvedPower / 0.7457 : null),
     type: extHP ? 'EXTRACTED' : 'CALCULATED',
@@ -1435,9 +1487,9 @@ ${notes}`);
     calculationSteps: extHP ? `${extHP} HP` : `HP = ${resolvedPower} / 0.7457`,
     confidence: determineConf(extHP ? 'EXTRACTED' : 'CALCULATED', resolvedPower ? 1 : null),
     reasoning: extHP ? 'Directly extracted HP rating.' : 'Derived HP capacity from verified kW parameter.'
-  };
+  });
 
-  const motorPolesNode: AuditParameterNode<number | null> = {
+  const motorPolesNode = getLineageNode<number | null>('motorPoles', {
     name: 'Motor Pole Count',
     value: extPoles || null,
     type: deducedPoles ? 'DERIVED' : (extPoles ? 'EXTRACTED' : 'ASSUMED'),
@@ -1446,10 +1498,10 @@ ${notes}`);
     calculationSteps: deducedPoles ? `Equivalent to: ${extPoles} Pole Motor at ${frequencyHz} Hz` : (extPoles ? `${extPoles} Poles` : 'N/A'),
     confidence: determineConf(deducedPoles ? 'DERIVED' : (extPoles ? 'EXTRACTED' : 'ASSUMED'), extPoles),
     reasoning: deducedPoles ? `Equivalent to a ${extPoles} Pole Motor operating at ${frequencyHz} Hz based on input speed of ${resolvedInputRPM?.toFixed(1) || ''}_RPM.` : (extPoles ? `Found explicit poles mention: ${extPoles} poles.` : 'No pole count specified.')
-  };
+  });
 
   const inputRPMMeta = getTraceConfAndType('inputRPM', inputRPMType, resolvedInputRPM);
-  const inputRPMNode: AuditParameterNode<number> = {
+  const inputRPMNode = getLineageNode<number>('inputRPM', {
     name: 'Input Speed (RPM)',
     value: resolvedInputRPM!,
     type: inputRPMMeta.type,
@@ -1458,10 +1510,10 @@ ${notes}`);
     calculationSteps: inputRPMSteps || `${resolvedInputRPM} RPM`,
     confidence: inputRPMMeta.confidence,
     reasoning: inputRPMReasoning || 'Input speed could not be resolved.'
-  };
+  });
 
   const outputRPMMeta = getTraceConfAndType('outputRPM', outputRPMType, resolvedOutputRPM);
-  const outputRPMNode: AuditParameterNode<number> = {
+  const outputRPMNode = getLineageNode<number>('outputRPM', {
     name: 'Output Speed (RPM)',
     value: resolvedOutputRPM!,
     type: outputRPMMeta.type,
@@ -1470,10 +1522,10 @@ ${notes}`);
     calculationSteps: outputRPMSteps || `${resolvedOutputRPM} RPM`,
     confidence: outputRPMMeta.confidence,
     reasoning: outputRPMReasoning || 'Output speed could not be resolved.'
-  };
+  });
 
   const ratioMeta = getTraceConfAndType('totalRatio', ratioType, resolvedRatio);
-  const ratioNode: AuditParameterNode<number> = {
+  const ratioNode = getLineageNode<number>('totalRatio', {
     name: 'Total Gear Ratio',
     value: resolvedRatio!,
     type: ratioMeta.type,
@@ -1482,9 +1534,9 @@ ${notes}`);
     calculationSteps: ratioSteps || `${resolvedRatio}:1`,
     confidence: ratioMeta.confidence,
     reasoning: resolvedRatio !== null ? ratioReasoning || 'Total gear ratio resolved.' : 'Total gear ratio could not be resolved.'
-  };
+  });
 
-  const stagesNode: AuditParameterNode<number> = {
+  const stagesNode = getLineageNode<number>('stages', {
     name: 'Stages',
     value: resolvedStages!,
     type: stagesType,
@@ -1493,9 +1545,9 @@ ${notes}`);
     calculationSteps: stagesSteps || `${resolvedStages}`,
     confidence: determineConf(stagesType, resolvedStages),
     reasoning: stagesReasoning || 'Gearbox stages could not be resolved.'
-  };
+  });
 
-  const serviceFactorNode: AuditParameterNode<number> = {
+  const serviceFactorNode = getLineageNode<number>('serviceFactor', {
     name: 'Service Factor',
     value: resolvedSF!,
     type: sfType,
@@ -1504,7 +1556,7 @@ ${notes}`);
     calculationSteps: sfSteps || `${resolvedSF}`,
     confidence: determineConf(sfType, resolvedSF),
     reasoning: sfReasoning || 'Service factor could not be resolved.'
-  };
+  });
 
   // 9. VALIDATION
   const validation = validateInputs(
@@ -1574,6 +1626,7 @@ ${notes}`);
 
       // Selection traceability details
       const seriesNum = parseInt(seriesVal.replace('s', ''));
+      const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
       const filtered = gearboxDatabase.filter(g => g.series === seriesNum);
       const rule1List = filtered.filter(g => g.nominal >= torqueAfter && g.rated >= maxTorqueAfter).sort((a, b) => a.nominal - b.nominal);
       const rule2List = filtered.filter(g => g.rated >= maxTorqueAfter).sort((a, b) => a.rated - b.rated);

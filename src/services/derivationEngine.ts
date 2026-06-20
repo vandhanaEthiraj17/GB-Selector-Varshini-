@@ -83,6 +83,21 @@ export function parseInputsWithMetadata(text: string): ParserResult {
     for (const regex of regexes) {
       const match = text.match(regex);
       if (match) {
+        const matchIndex = match.index || 0;
+        const startIndex = Math.max(0, matchIndex - 30);
+        const context = text.slice(startIndex, matchIndex + match[0].length).toLowerCase();
+
+        if (fieldName === 'inputRadS') {
+          if (context.includes('driven speed') || context.includes('driven') || context.includes('output') || context.includes('lss') || context.includes('low speed') || context.includes('drum speed') || context.includes('equipment speed') || context.includes('equipment')) {
+            continue;
+          }
+        }
+        if (fieldName === 'outputRadS') {
+          if (context.includes('input') || context.includes('motor') || context.includes('inlet') || context.includes('sync') || context.includes('high speed') || context.includes('hss') || context.includes('driver') || context.includes('prime mover')) {
+            continue;
+          }
+        }
+
         const val = parseFloat(match[1]);
         if (!isNaN(val)) {
           let rawVal = val;
@@ -93,6 +108,17 @@ export function parseInputsWithMetadata(text: string): ParserResult {
           }
           const finalVal = modifier ? modifier(rawVal, match) : rawVal;
           
+          if (fieldName === 'serviceFactor') {
+            const sfAliases = [
+              'service factor', 'application factor', 'duty factor', 'fb', 'service coefficient',
+              'load factor', 'application service factor', 'agma service factor', 'required service factor',
+              'minimum service factor', 'design service factor', 'sf', 'factor'
+            ];
+            const matchedSfAlias = sfAliases.find(alias => match[0].toLowerCase().includes(alias)) || 'serviceFactor';
+            console.log(`[SF TRACE] Alias Matched: ${matchedSfAlias}`);
+            console.log(`[SF TRACE] Value Extracted: ${finalVal} from ${displayName}`);
+          }
+
           // Debug Logging showing: Raw Text -> Extracted Entity -> Normalized Parameter -> Final Internal Field
           console.log(`[EXTRACTION DEBUG]
   Raw Text Segment: "${match[0].trim()}"
@@ -130,14 +156,14 @@ export function parseInputsWithMetadata(text: string): ParserResult {
   // 0. Parameter Alias Mapping Layer
   // Input RPM -> inputRadS
   matchValue([
-    /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:approximately|approx\.?|about|around|~)?\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
-    /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
+    /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:approximately|approx\.?|about|around|~)?\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+    /(\d{3,4}(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
   ], (v) => v * (2 * Math.PI) / 60, 'inputRadS', 'Input Speed');
 
   // Output RPM -> outputRadS
   matchValue([
-    /(?<!input\s+|motor\s+|inlet\s+|drive\s+)(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b|\bRPM\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:approximately|approx\.?|about|around|~)?\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
-    /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?<!input\s+|motor\s+|inlet\s+|drive\s+)(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
+    /(?<!input\s+|motor\s+|inlet\s+|drive\s+)(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b|\bRPM\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:approximately|approx\.?|about|around|~)?\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+    /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?<!input\s+|motor\s+|inlet\s+|drive\s+)(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
   ], (v) => v * (2 * Math.PI) / 60, 'outputRadS', 'Output Speed');
 
   // Ratio
@@ -173,7 +199,7 @@ export function parseInputsWithMetadata(text: string): ParserResult {
 
   // Service Factor
   matchValue([
-    /(?:service\s+factor|SF|factor)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:approximately|approx\.?|about|around|~)?\s*(\d+(?:\.\d+)?)/i
+    /(?:service\s+factor|SF|factor|application\s+factor|duty\s+factor|fb|service\s+coefficient|load\s+factor|application\s+service\s+factor|agma\s+service\s+factor|required\s+service\s+factor|minimum\s+service\s+factor|design\s+service\s+factor)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:approximately|approx\.?|about|around|~)?\s*(\d+(?:\.\d+)?)/i
   ], undefined, 'serviceFactor', 'Service Factor');
 
   // 1. Conveyor & General Speed Inputs
@@ -1727,6 +1753,12 @@ export class MissingParameterResolutionEngine {
         missingInputsForTargets[target] = paths;
       }
     }
+
+    console.log("[SF TRACE]", {
+      stage: "MissingParameterResolutionEngine",
+      value: derivedParameters.serviceFactor !== undefined ? derivedParameters.serviceFactor : null,
+      source: userProvidedKeys.has('serviceFactor') ? "user_provided" : "rule_resolution"
+    });
 
     return { derivedParameters, traces, skips, missingInputsForTargets };
   }

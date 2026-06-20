@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
-import { Settings } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Settings, Database } from 'lucide-react';
+import { AdminDatabaseModal } from './AdminDatabaseModal';
 
 interface HeaderProps {
   projectName: string;
@@ -8,6 +9,8 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   projectName,
 }) => {
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+
   useEffect(() => {
     document.title = projectName ? `MAGTORQ | ${projectName}` : 'MAGTORQ Gearbox Selector';
   }, [projectName]);
@@ -24,6 +27,18 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
       </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setIsAdminOpen(true)}
+          className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700/80 text-[11px] font-bold text-slate-300 hover:text-white rounded-xl border border-slate-700/60 shadow-sm transition-all duration-150 cursor-pointer active:scale-95"
+        >
+          <Database className="h-3.5 w-3.5 text-amber-500" />
+          Database Portal
+        </button>
+      </div>
+
+      <AdminDatabaseModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
     </header>
   );
 };

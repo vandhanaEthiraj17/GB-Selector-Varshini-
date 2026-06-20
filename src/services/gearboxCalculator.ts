@@ -1,6 +1,6 @@
 import { ProjectInput } from '../types/ProjectInput';
 import { CalculationResult, StageDetail } from '../types/CalculationResult';
-import { seriesData } from '../data/seriesData';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 import { selectGearbox } from './gearboxSelector';
 
 /**
@@ -24,6 +24,7 @@ export async function calculateGearboxOptions(
   }
 
   // Get active series ratios for each stage
+  const seriesData = EngineeringDatabaseService.getSeriesData();
   const activeSeriesRatios: number[][] = [];
   for (let i = 0; i < stages; i++) {
     const seriesKey = stageSeries[i];

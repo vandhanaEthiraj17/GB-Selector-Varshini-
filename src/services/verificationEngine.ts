@@ -1,5 +1,4 @@
-import { gearboxDatabase } from '../data/gearboxDatabase';
-import { seriesData } from '../data/seriesData';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 import { EngineeringReport, seriesLimits } from './engineeringReasoningEngine';
 import { derivationRules } from './derivationEngine';
 
@@ -38,6 +37,8 @@ export interface VerificationReport {
  * Checks database integrity, classifying issues into critical errors and warnings (Stage 5)
  */
 export function verifyDatabaseIntegrity(): { critical: string[]; warnings: string[] } {
+  const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
+  const seriesData = EngineeringDatabaseService.getSeriesData();
   const critical: string[] = [];
   const warnings: string[] = [];
 
@@ -121,6 +122,7 @@ export interface RawExtractedParameters {
  * Executes the complete verification audits, categorizing into INFO, WARNING, MISSING INPUT, and CRITICAL
  */
 export function verifyEngineeringReport(report: EngineeringReport, rawExtracted?: RawExtractedParameters): VerificationReport {
+  const gearboxDatabase = EngineeringDatabaseService.getGearboxDatabase();
   const infos: string[] = [];
   const warnings: string[] = [];
   const missingInputs: string[] = [];
@@ -181,6 +183,12 @@ export function verifyEngineeringReport(report: EngineeringReport, rawExtracted?
   if (report.serviceFactor.type === 'SUGGESTED' || report.serviceFactor.type === 'ASSUMED') {
     infos.push(`Assumed service factor: Suggested standard service factor ${report.serviceFactor.value} based on ${report.applicationType} application.`);
   }
+
+  console.log("[SF TRACE]", {
+    stage: "VerificationEngine",
+    value: report.serviceFactor.value,
+    source: report.serviceFactor.source
+  });
 
   // Missing Inputs
   let isMissingInputsCritical = false;

@@ -7,9 +7,8 @@ import { ResultsTable } from '../components/ResultsTable';
 import { StageDetailsModal } from '../components/StageDetailsModal';
 import { ProjectInput, DEFAULT_MECHANICAL_FILTERS } from '../types/ProjectInput';
 import { CalculationResult } from '../types/CalculationResult';
-import { calculateGearboxOptions } from '../services/gearboxCalculator';
-import { EngineeringReport } from '../services/engineeringReasoningEngine';
-import { VerificationReport } from '../services/verificationEngine';
+import type { EngineeringReport } from '../services/engineeringReasoningEngine';
+import type { VerificationReport } from '../services/verificationEngine';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -83,8 +82,23 @@ export const GearboxSelector: React.FC = () => {
     }
     setLoading(true);
     try {
-      const calcResults = await calculateGearboxOptions(inputs, numOptions);
-      setResults(calcResults);
+      const response = await fetch('/api/calculate-sizing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inputs,
+          numOptions
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      setResults(data);
     } catch (err) {
       console.error(err);
       alert('Calculation error: ' + (err as Error).message);

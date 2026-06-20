@@ -1,5 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import * as mammoth from 'mammoth';
+import { createWorker } from 'tesseract.js';
 
 interface AsyncIterableStream {
   [Symbol.asyncIterator](): AsyncGenerator<unknown, void, unknown>;
@@ -28,21 +29,65 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 /**
- * Extracts plain text from TXT, PDF, or DOCX files client-side.
+ * Perform local OCR on a File or Canvas.
+ */
+export async function performOCR(imageSource: File | HTMLCanvasElement): Promise<string> {
+  let worker: any = null;
+  try {
+    // Create a worker with english language
+    worker = await createWorker('eng');
+    const ret = await worker.recognize(imageSource);
+    return ret.data.text;
+  } catch (err) {
+    console.error("Local OCR execution failed:", err);
+    throw new Error(`Local OCR failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    if (worker) {
+      try {
+        await worker.terminate();
+      } catch (termErr) {
+        console.error("Error terminating Tesseract worker:", termErr);
+      }
+    }
+  }
+}
+
+/**
+ * Extracts plain text from TXT, PDF, DOCX, or Image files client-side.
  */
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  let text = "";
 
   switch (fileExt) {
     case '.txt':
-      return readTxtFile(file);
+      text = await readTxtFile(file);
+      break;
     case '.pdf':
-      return readPdfFile(file);
+      text = await readPdfFile(file);
+      break;
     case '.docx':
-      return readDocxFile(file);
+      text = await readDocxFile(file);
+      break;
+    case '.png':
+    case '.jpg':
+    case '.jpeg':
+    case '.bmp':
+    case '.tiff':
+    case '.webp':
+      text = await performOCR(file);
+      break;
     default:
       throw new Error(`Unsupported file format: ${fileExt}`);
   }
+
+  console.log("[SF TRACE]", {
+    stage: "OCRExtraction",
+    value: null,
+    source: file.name
+  });
+
+  return text;
 }
 
 function readTxtFile(file: File): Promise<string> {
@@ -65,14 +110,14 @@ async function readPdfFile(file: File): Promise<string> {
     throw new Error(`Failed to read PDF file: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
   }
 
+  let pdf: any;
   try {
-    // Load the PDF document using Vite-compatible worker and ArrayBuffer data
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdf = await loadingTask.promise;
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+    pdf = await loadingTask.promise;
     
     let extractedText = "";
     
-    // Extract text page by page
+    // Attempt standard text extraction page by page
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
@@ -88,28 +133,49 @@ async function readPdfFile(file: File): Promise<string> {
     
     // If standard text extraction yields nothing, trigger fallback
     console.warn("Standard PDF text extraction yielded empty string. Attempting binary text extraction fallback...");
-    const fallbackText = extractStringsFallback(arrayBuffer);
+    const fallbackText = extractStringsFallback(arrayBuffer.slice(0));
     if (fallbackText.trim()) {
       return fallbackText;
     }
     
-    throw new Error("No text content could be extracted from this PDF using standard or fallback parsers.");
+    throw new Error("No text content found.");
   } catch (error) {
-    // Detailed error logging for PDF parsing failures (Display exact parsing errors in the browser console)
-    console.error("PDF parsing failure detailed logs:", error);
+    console.warn("Digital PDF parsing failed or yielded empty results. Running scanned PDF OCR fallback...", error);
     
-    // Attempt fallback parsing on error as well
+    // Scanned PDF fallback: Render pages to canvas and perform OCR
     try {
-      console.warn("Attempting binary text extraction fallback due to PDF parsing error...");
-      const fallbackText = extractStringsFallback(arrayBuffer);
-      if (fallbackText.trim()) {
-        return fallbackText;
+      if (!pdf) {
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+        pdf = await loadingTask.promise;
       }
-    } catch (fallbackError) {
-      console.error("PDF fallback parsing also failed:", fallbackError);
+      
+      let ocrText = "";
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        // Render at 2.0 scale for better OCR accuracy
+        const viewport = page.getViewport({ scale: 2.0 });
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        if (context) {
+          await page.render({ canvasContext: context, viewport }).promise;
+          const pageOcr = await performOCR(canvas);
+          ocrText += pageOcr + "\n";
+        }
+      }
+      
+      if (ocrText.trim()) {
+        return ocrText;
+      }
+      
+      throw new Error("No text could be extracted via OCR.");
+    } catch (ocrError) {
+      console.error("PDF scanned OCR fallback also failed:", ocrError);
+      throw new Error(`PDF Parsing and OCR failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
-    
-    throw new Error(`PDF Parsing failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 

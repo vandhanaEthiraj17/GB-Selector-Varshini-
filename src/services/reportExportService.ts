@@ -38,6 +38,12 @@ export function exportToPDF(
   verificationReport: VerificationReport,
   projectName: string
 ): void {
+  console.log("[SF TRACE]", {
+    stage: "ReportExportPDF",
+    value: report.serviceFactor.value,
+    source: report.serviceFactor.source
+  });
+
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 14;

@@ -6,14 +6,19 @@
  * VE-3: Safety factor audit passes for a compliant selection
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { verifyDatabaseIntegrity, verifyEngineeringReport } from './verificationEngine';
 import { generateAuditReport } from './engineeringReasoningEngine';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 
 // ───────────────────────────────────────────────────
 // VE-2: Database Integrity
 // ───────────────────────────────────────────────────
 describe('VE-2: Database Integrity Scan', () => {
+  beforeAll(async () => {
+    await EngineeringDatabaseService.init(true);
+  });
+
   it('should return zero critical errors for the production gearbox database', () => {
     const result = verifyDatabaseIntegrity();
     expect(result.critical).toHaveLength(0);

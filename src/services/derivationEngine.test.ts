@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { MissingParameterResolutionEngine, parseInputsFromText, parseInputsWithMetadata, derivationRules } from './derivationEngine';
 import { generateAuditReport } from './engineeringReasoningEngine';
 import { verifyEngineeringReport } from './verificationEngine';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
+
+beforeAll(async () => {
+  await EngineeringDatabaseService.init(true);
+});
 
 describe('Phase 1 Derivation Rules Formula Accuracy', () => {
   it('should verify DR-001: Conveyor Belt Speed to Output RadS', () => {

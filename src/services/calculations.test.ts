@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 import {
   StageDistributionEngine,
   TorquePropagationEngine,
@@ -9,6 +10,10 @@ import {
 } from './calculations';
 
 describe('Planetary Stage Ratio Distribution (StageDistributionEngine)', () => {
+  beforeAll(async () => {
+    await EngineeringDatabaseService.init(true);
+  });
+
   it('should verify Example 7.2: Target Ratio 20.5 (2 Stages)', () => {
     const result = StageDistributionEngine.distributeRatio(20.5, 2);
     expect(result[0]).toBeGreaterThanOrEqual(3.75);

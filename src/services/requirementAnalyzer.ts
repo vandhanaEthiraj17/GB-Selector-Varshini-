@@ -27,7 +27,6 @@ export async function analyzeRequirementText(text: string): Promise<Partial<Proj
   // Exclude output speed terms from rpmMatches
   const rpmMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*RPM/gi)]
     .filter(match => {
-      const matchText = match[0].toLowerCase();
       const startIndex = Math.max(0, match.index! - 30);
       const context = text.slice(startIndex, match.index! + match[0].length + 30).toLowerCase();
       if (context.includes('driven speed') || context.includes('driven') || context.includes('output') || context.includes('lss') || context.includes('low speed') || context.includes('drum speed') || context.includes('equipment speed')) {

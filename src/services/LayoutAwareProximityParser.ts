@@ -237,7 +237,7 @@ export class LayoutAwareProximityParser {
     return null;
   }
 
-  private static createMissingParameter<T>(name: string, explanation: string): LineageParameter<T> {
+  private static createMissingParameter<T>(_name: string, explanation: string): LineageParameter<T> {
     return {
       value: null,
       originalValue: null,
@@ -320,7 +320,6 @@ export class LayoutAwareProximityParser {
 
     // Extract Application Type
     const appAnchors = ['conveyor', 'mixer', 'crusher', 'agitator', 'winch', 'hoist', 'pump', 'fan', 'jack', 'thickener', 'clarifier', 'reactor', 'apron feeder', 'chain conveyor'];
-    let appVal = 'CONVEYOR';
     let appLineage: LineageParameter<string>;
     let appMatch = null;
     

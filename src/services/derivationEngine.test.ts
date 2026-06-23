@@ -241,7 +241,8 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
     it('should calculate Torque = Power / RadS when efficiency is missing', () => {
       const known = { powerW: 10000, outputRadS: 10 * 2 * Math.PI / 60 };
       const res = MissingParameterResolutionEngine.resolve(known);
-      expect(res.derivedParameters.outputTorqueNm).toBeCloseTo(10000 / (10 * 2 * Math.PI / 60), 2);
+      // Under DR-015, if efficiency is missing, we use default compounded stage efficiency (fallback to 0.97 for 1 stage)
+      expect(res.derivedParameters.outputTorqueNm).toBeCloseTo((10000 * 0.97) / (10 * 2 * Math.PI / 60), 2);
     });
 
     it('should calculate Torque = Tangential Load * Radius', () => {
@@ -438,8 +439,8 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
       expect(report.inputRPM.value).toBe(1450);
       // Ratio = 1450 / 42.9718 = 33.74
       expect(report.totalRatio.value).toBeCloseTo(33.743, 2);
-      // Output Torque = (22 * 0.97 * 9549.3) / 42.97183463481174 = 4742.22 N.m (under DR-015 efficiency corrected torque)
-      expect(report.outputTorqueNm?.value).toBeCloseTo(4742.22, 1);
+      // Output Torque = (22 * 0.97^2 * 9549.3) / 42.97183463481174 = 4599.96 N.m (under DR-015 efficiency corrected torque with 2 stages)
+      expect(report.outputTorqueNm?.value).toBeCloseTo(4599.96, 1);
 
       // Verify the verification check
       const verification = verifyEngineeringReport(report, {
@@ -705,7 +706,7 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
             'Input speed 1450 RPM, Input Torque 500 Nm, Output Torque 38800 Nm',
             {}
           );
-          expect(report2.totalRatio.value).toBeCloseTo(80, 0);
+          expect(report2.totalRatio.value).toBeCloseTo(82.5, 0);
           expect(report2.totalRatio.confidence).toBe('Medium');
           expect(report2.totalRatio.type).toBe('ASSUMED_VALUE');
         });
@@ -716,8 +717,8 @@ describe('Dependency-Based Engineering Reasoning Engine', () => {
             {}
           );
           expect(report.powerKW.value).toBeCloseTo(75, 0);
-          expect(report.totalRatio.value).toBeCloseTo(80, 0);
-          expect(report.outputRPM.value).toBeCloseTo(18.125, 1);
+          expect(report.totalRatio.value).toBeCloseTo(82.5, 0);
+          expect(report.outputRPM.value).toBeCloseTo(17.58, 1);
         });
 
         it('should debug user Agitator RFQ parsing', () => {
@@ -794,6 +795,16 @@ Output Torque: 4890 Nm`;
           expect(report.extractedEngineeringParams!.outputTorqueNm?.value).toBeCloseTo(4413, 0);
           expect(report.totalRatio.value).toBeCloseTo(36, 0);
           expect(report.outputRPM.value).toBeCloseTo(40, 0);
+        });
+
+        it('should snap to motor poles from resolved input RPM when not explicitly provided', () => {
+          const report = generateAuditReport(
+            'Input speed 1000 RPM. Required Output Speed = 12 RPM. Connected Load = 15 HP.',
+            {}
+          );
+          expect(report.inputRPM.value).toBe(1000);
+          expect(report.motorPoles.value).toBe(6);
+          expect(report.motorPoles.type).toBe('DERIVED');
         });
       });
     });

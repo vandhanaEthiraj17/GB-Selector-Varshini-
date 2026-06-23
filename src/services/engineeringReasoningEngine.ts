@@ -8,7 +8,8 @@ import {
   TorquePropagationEngine,
   SafetyFactorEngine,
   MissingDataResolutionEngine,
-  RatioEngine
+  RatioEngine,
+  ENGINEERING_CONSTANTS
 } from './calculations';
 import {
   parseInputsWithMetadata,
@@ -160,7 +161,10 @@ export interface EngineeringReport {
   assumptions: { parameter: string; assumption: string; reason: string }[];
 
   // Derivation framework additions
+  inputTorqueNm?: AuditParameterNode<number | null>;
   outputTorqueNm?: AuditParameterNode<number | null>;
+  shaftSpeedRPM?: AuditParameterNode<number | null>;
+  shaftTorqueNm?: AuditParameterNode<number | null>;
   rmsTorqueNm?: AuditParameterNode<number | null>;
   accelerationTorqueNm?: AuditParameterNode<number | null>;
   effectiveThermalPowerKW?: AuditParameterNode<number | null>;
@@ -706,9 +710,9 @@ export function generateAuditReport(
   } else if (extPoles !== undefined && extPoles !== null && extPoles > 0) {
     // poles synchronization speed calculation: (120 * f) / poles
     const syncSpeedRPM = (120 * frequencyHz) / extPoles;
-    const speed = syncSpeedRPM * (1 - 0.04); // actual speed assuming avg motor slip
+    const speed = syncSpeedRPM * (1 - ENGINEERING_CONSTANTS.AVG_MOTOR_SLIP); // actual speed assuming avg motor slip
     resolvedInputRPM = speed;
-    inputRPMType = 'DERIVED';
+    inputRPMType = 'ENGINE_RULE';
     inputRPMSource = 'Motor Poles Rule Engine';
     inputRPMFormula = 'Poles-to-Speed Table Mapping';
     inputRPMSteps = `${extPoles}-Pole Motor → ${resolvedInputRPM} RPM`;
@@ -1224,6 +1228,23 @@ export function generateAuditReport(
     }
   }
 
+  // Snaps to standard poles based on resolved input speed if poles are not explicitly provided
+  if ((extPoles === null || extPoles === undefined) && resolvedInputRPM) {
+    if (resolvedInputRPM >= 2700 && resolvedInputRPM <= 3100) {
+      extPoles = 2;
+      deducedPoles = true;
+    } else if (resolvedInputRPM >= 1350 && resolvedInputRPM <= 1550) {
+      extPoles = 4;
+      deducedPoles = true;
+    } else if (resolvedInputRPM >= 900 && resolvedInputRPM <= 1050) {
+      extPoles = 6;
+      deducedPoles = true;
+    } else if (resolvedInputRPM >= 680 && resolvedInputRPM <= 780) {
+      extPoles = 8;
+      deducedPoles = true;
+    }
+  }
+
   const formatVal = (norm: any, resolved: any) => {
     if (norm?.type === 'range') {
       return resolved !== null ? String(resolved) : `${norm.min}-${norm.max}`;
@@ -1606,10 +1627,17 @@ ${notes}`);
 
     // Distribute ratios
     const { ratios, series } = distributeRatios(R_req, stagesNode.value);
-    overallEfficiency = TorquePropagationEngine.overallEfficiency(stagesNode.value);
+    const effVal = (parserResult.values.efficiency !== undefined && parserResult.values.efficiency !== null)
+      ? parserResult.values.efficiency
+      : TorquePropagationEngine.overallEfficiency(stagesNode.value);
+    overallEfficiency = effVal;
 
     let speed = Nin;
     let torque = Tin;
+
+    const stageEff = (parserResult.values.efficiency !== undefined && parserResult.values.efficiency !== null)
+      ? Math.pow(parserResult.values.efficiency, 1 / stagesNode.value)
+      : 0.97;
 
     for (let i = 0; i < stagesNode.value; i++) {
       const ratio = ratios[i];
@@ -1618,7 +1646,7 @@ ${notes}`);
       const speedBefore = speed;
       const speedAfter = speed / ratio;
       const torqueBefore = torque;
-      const torqueAfter = torque * ratio * 0.97;
+      const torqueAfter = torque * ratio * stageEff;
       const maxTorqueAfter = torqueAfter * serviceFactorNode.value;
 
       // Select Gearbox
@@ -1636,10 +1664,10 @@ ${notes}`);
 
       if (rule1List.length > 0) {
         selectionRuleApplied = 'Rule 1 (Ideal)';
-        selectionReason = `Smallest gearbox satisfying both Nominal torque (${Math.round(torqueAfter).toLocaleString()} N·m) and peak load (${Math.round(maxTorqueAfter).toLocaleString()} N·m) requirements.`;
+        selectionReason = `Smallest gearbox satisfying both Nominal torque (${PowerTorqueEngine.formatTorqueExact(torqueAfter)} N·m) and peak load (${PowerTorqueEngine.formatTorqueExact(maxTorqueAfter)} N·m) requirements.`;
       } else if (rule2List.length > 0) {
         selectionRuleApplied = 'Rule 2 (Fallback)';
-        selectionReason = `Smallest gearbox satisfying peak overload torque (${Math.round(maxTorqueAfter).toLocaleString()} N·m). Flagged for moderate slip operation.`;
+        selectionReason = `Smallest gearbox satisfying peak overload torque (${PowerTorqueEngine.formatTorqueExact(maxTorqueAfter)} N·m). Flagged for moderate slip operation.`;
       }
 
       // Safety Factor
@@ -1656,10 +1684,10 @@ ${notes}`);
         
         speedFormula: 'N_out = N_in / Ratio',
         speedSteps: `N_out = ${speedBefore.toFixed(1)} / ${ratio} = ${speedAfter.toFixed(1)} RPM`,
-        torqueFormula: 'Tout = Tin × Ratio × 0.97',
-        torqueSteps: `Tout = ${torqueBefore.toFixed(2)} × ${ratio} × 0.97 = ${torqueAfter.toFixed(2)} N·m`,
-        gbNominalCheck: `GB Nominal Capacity = ${gb.nominal} N·m vs Stage Nominal = ${Math.round(torqueAfter)} N·m (Ratio: ${(gb.nominal / torqueAfter).toFixed(2)})`,
-        gbRatedCheck: `GB Rated Capacity = ${gb.rated} N·m vs Stage Maximum = ${Math.round(maxTorqueAfter)} N·m (Ratio: ${(gb.rated / maxTorqueAfter).toFixed(2)})`,
+        torqueFormula: `Tout = Tin × Ratio × ${stageEff.toFixed(4)}`,
+        torqueSteps: `Tout = ${torqueBefore.toFixed(2)} × ${ratio} × ${stageEff.toFixed(4)} = ${torqueAfter.toFixed(2)} N·m`,
+        gbNominalCheck: `GB Nominal Capacity = ${gb.nominal} N·m vs Stage Nominal = ${PowerTorqueEngine.formatTorqueExact(torqueAfter)} N·m (Ratio: ${(gb.nominal / torqueAfter).toFixed(2)})`,
+        gbRatedCheck: `GB Rated Capacity = ${gb.rated} N·m vs Stage Maximum = ${PowerTorqueEngine.formatTorqueExact(maxTorqueAfter)} N·m (Ratio: ${(gb.rated / maxTorqueAfter).toFixed(2)})`,
         safetyFormula: 'SF = min(GBNominal / StageNominal, GBRated / StageMaximum)',
         safetySteps: `SF = min(${gb.nominal} / ${torqueAfter.toFixed(1)}, ${gb.rated} / ${maxTorqueAfter.toFixed(1)}) = ${safetyVal.toFixed(2)}`,
         selectionReason,
@@ -1674,6 +1702,11 @@ ${notes}`);
     overallMaxTorque = torque * serviceFactorNode.value;
   }
 
+  if ((overallOutputTorque === null || overallOutputTorque === undefined || overallOutputTorque === 0) && powerNode.value !== null && powerNode.value !== undefined && outputRPMNode.value !== null && outputRPMNode.value !== undefined && outputRPMNode.value > 0) {
+    overallOutputTorque = (powerNode.value * (60000 / (2 * Math.PI))) / outputRPMNode.value;
+    overallMaxTorque = overallOutputTorque * serviceFactorNode.value;
+  }
+
   // 11. FINAL RECOMMENDATION TEXT
   const lastGb = stageTraces[stageTraces.length - 1]?.selectedGearbox;
   const isSafe = stageTraces.length > 0 && stageTraces.every(d => d.safetyFactor >= 1.0);
@@ -1684,7 +1717,7 @@ ${notes}`);
     recommendationText += `We recommend a **${stagesNode.value}-stage reduction gearbox configuration** utilizing the **${stagesNode.value === 1 ? 'S1' : stagesNode.value === 2 ? 'S1 × S2' : stagesNode.value === 3 ? 'S1 × S2 × S3' : 'S1 × S2 × S3 × S4'}** series sequence. `;
 
     if (lastGb) {
-      recommendationText += `The final stage is resolved to a **MAGTORQ ${lastGb.size}** model, which satisfies the output nominal torque demands of **${Math.round(overallOutputTorque).toLocaleString()} N·m** and peak loads of **${Math.round(overallMaxTorque).toLocaleString()} N·m** under a service factor of **${serviceFactorNode.value}**. \n\n`;
+      recommendationText += `The final stage is resolved to a **MAGTORQ ${lastGb.size}** model, which satisfies the output nominal torque demands of **${PowerTorqueEngine.formatTorqueExact(overallOutputTorque)} N·m** and peak loads of **${PowerTorqueEngine.formatTorqueExact(overallMaxTorque)} N·m** under a service factor of **${serviceFactorNode.value}**. \n\n`;
     }
 
     recommendationText += `**Calculated Ratios Breakdown:** ${stageTraces.map(t => t.ratio).join(' × ')} yielding a total reduction ratio of **${R_req.toFixed(2)}:1** (Output Speed: **${outputRPMNode.value.toFixed(1)} RPM**).
@@ -1716,7 +1749,31 @@ ${notes}`);
     return undefined;
   };
 
-  const outputTorqueNmNode = createDerivationNodeOptional<number>('outputTorqueNm', 'Output Torque', 'N·m');
+  const inputTorqueNmNode = parserResult.nodes.inputTorqueNm || createDerivationNodeOptional<number>('inputTorqueNm', 'Input Torque', 'N·m') || (inputTorqueTrace.result > 0 ? {
+    name: 'Input Torque (N·m)',
+    value: inputTorqueTrace.result,
+    type: 'CALCULATED',
+    source: 'Sizing Calculations',
+    formula: inputTorqueTrace.formula,
+    calculationSteps: inputTorqueTrace.calculationSteps,
+    confidence: 'High',
+    reasoning: 'Derived motor shaft input torque from resolved input power and speed.'
+  } as AuditParameterNode<number> : undefined);
+
+  const outputTorqueNmNode = parserResult.nodes.outputTorqueNm || createDerivationNodeOptional<number>('outputTorqueNm', 'Output Torque', 'N·m') || (overallOutputTorque > 0 ? {
+    name: 'Output Torque (N·m)',
+    value: overallOutputTorque,
+    type: 'CALCULATED',
+    source: 'Sizing Propagation',
+    formula: 'Tout = Tin * Ratio * Efficiency',
+    calculationSteps: `Tout = ${(inputTorqueTrace.result || 0).toFixed(2)} * ${(ratioNode.value || 0).toFixed(2)} * ${(overallEfficiency || 1).toFixed(4)} = ${overallOutputTorque.toFixed(2)} N·m`,
+    confidence: 'High',
+    reasoning: 'Calculated continuous output torque by propagating input torque through stage ratios and planetary efficiencies.'
+  } as AuditParameterNode<number> : undefined);
+
+  const shaftSpeedRPMNode = parserResult.nodes.shaftSpeedRPM || createDerivationNodeOptional<number>('shaftSpeedRPM', 'Shaft Speed', 'RPM');
+  const shaftTorqueNmNode = parserResult.nodes.shaftTorqueNm || createDerivationNodeOptional<number>('shaftTorqueNm', 'Shaft Torque', 'N·m');
+
   const rmsTorqueNmNode = createDerivationNodeOptional<number>('rmsTorqueNm', 'RMS Torque', 'N·m');
   const accelerationTorqueNmNode = createDerivationNodeOptional<number>('accelerationTorqueNm', 'Acceleration Torque', 'N·m');
   const effectiveThermalPowerKWNode = createDerivationNodeOptional<number>('effectiveThermalPowerKW', 'Effective Thermal Power', 'kW');
@@ -1747,7 +1804,10 @@ ${notes}`);
     overallMaxTorque,
     finalRecommendation: recommendationText,
     assumptions,
+    inputTorqueNm: inputTorqueNmNode,
     outputTorqueNm: outputTorqueNmNode,
+    shaftSpeedRPM: shaftSpeedRPMNode,
+    shaftTorqueNm: shaftTorqueNmNode,
     rmsTorqueNm: rmsTorqueNmNode,
     accelerationTorqueNm: accelerationTorqueNmNode,
     effectiveThermalPowerKW: effectiveThermalPowerKWNode,

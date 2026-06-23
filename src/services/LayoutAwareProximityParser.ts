@@ -168,14 +168,17 @@ export class LayoutAwareProximityParser {
       const matchedAnchor = anchors.find(anchor => this.matchAnchor(line, anchor, name));
       
       if (matchedAnchor) {
-        // Look for number + unit in the line
-        // Matches e.g. "motor 15kw", "speed: 1440rpm", "ratio 72:1"
+        const anchorIndex = line.toLowerCase().indexOf(matchedAnchor.toLowerCase());
+        const preText = line.slice(0, anchorIndex);
+        const subText = line.slice(anchorIndex + matchedAnchor.length);
+
+        // Look for number + unit in the subtext following anchor
         const regexStr = expectedUnits.length > 0 
           ? `(\\d+(?:\\.\\d+)?)\\s*(${expectedUnits.map(u => u.replace('.', '\\.')).join('|')})\\b`
           : `(\\d+(?:\\.\\d+)?)\\s*([a-zA-Z\\u00B7\\u2022\\-\\.\\/0-9]*)`;
         
         const regex = new RegExp(regexStr, 'i');
-        const match = line.match(regex);
+        let match = subText.match(regex);
         if (match) {
           return {
             value: parseFloat(match[1]),
@@ -187,11 +190,41 @@ export class LayoutAwareProximityParser {
           };
         }
 
-        // Generic number lookup as fallback
-        const genericMatch = line.match(/(\d+(?:\.\d+)?)/);
-        if (genericMatch) {
+        // Look for number + unit in preText at the end (e.g. "15 kW Power")
+        const preRegexStr = expectedUnits.length > 0
+          ? `(\\d+(?:\\.\\d+)?)\\s*(${expectedUnits.map(u => u.replace('.', '\\.')).join('|')})\\s*$`
+          : `(\\d+(?:\\.\\d+)?)\\s*([a-zA-Z\\u00B7\\u2022\\-\\.\\/0-9]*)\\s*$`;
+        const preRegex = new RegExp(preRegexStr, 'i');
+        match = preText.match(preRegex);
+        if (match) {
           return {
-            value: parseFloat(genericMatch[1]),
+            value: parseFloat(match[1]),
+            unit: match[2] ? match[2].trim() : '',
+            location: `Line ${i + 1}`,
+            fragment: line.trim(),
+            confidence: 'High',
+            matchedAnchor
+          };
+        }
+
+        // Generic number lookup as fallback in subText
+        const genericSubMatch = subText.match(/(\d+(?:\.\d+)?)/);
+        if (genericSubMatch) {
+          return {
+            value: parseFloat(genericSubMatch[1]),
+            unit: '',
+            location: `Line ${i + 1} (Generic numeric match)`,
+            fragment: line.trim(),
+            confidence: 'Low',
+            matchedAnchor
+          };
+        }
+
+        // Generic number lookup as fallback at the end of preText
+        const genericPreMatch = preText.match(/(\d+(?:\.\d+)?)\s*$/);
+        if (genericPreMatch) {
+          return {
+            value: parseFloat(genericPreMatch[1]),
             unit: '',
             location: `Line ${i + 1} (Generic numeric match)`,
             fragment: line.trim(),

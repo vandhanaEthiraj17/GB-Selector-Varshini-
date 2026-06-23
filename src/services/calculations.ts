@@ -332,6 +332,23 @@ export class PowerTorqueEngine {
     return torqueNm * speedRadS;
   }
 
+  static formatTorqueExact(val: number): string {
+    if (val === undefined || val === null || isNaN(val)) return 'N/A';
+    if (val % 1 === 0) {
+      return val.toLocaleString();
+    }
+    const str = val.toString();
+    if (str.includes('e')) {
+      const fixed = val.toFixed(14).replace(/\.?0+$/, '');
+      const parts = fixed.split('.');
+      parts[0] = Number(parts[0]).toLocaleString();
+      return parts.join('.');
+    }
+    const parts = str.split('.');
+    parts[0] = Number(parts[0]).toLocaleString();
+    return parts.join('.');
+  }
+
   ////////////////////////////////////
   // HP → kW
   ////////////////////////////////////
@@ -974,8 +991,8 @@ export class ParameterExtractionEngine {
     //////////////////////////////////////////////////
 
     const powerPatterns = [
-      /(?:Power|Motor\s+Power|Drive\s+Power|Motor\s+Rating|Motor\s+Capacity|Installed\s+Power|Connected\s+Load|Motor|\bPWR\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:RPM|r\/min|speed|poles?|hz|v|volts?))\s*(kW|HP|Kilowatt|Horsepower|h\.p\.)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])\s*(?:kW|HP|Kilowatt|Horsepower|h\.p\.)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Power|Motor\s+Power|Drive\s+Power|Motor\s+Rating|Motor\s+Capacity|Installed\s+Power|Connected\s+Load|Motor|\bPWR\b)?/i
+      /(?:Power|Motor\s+Power|Drive\s+Power|Motor\s+Rating|Motor\s+Capacity|Installed\s+Power|Connected\s+Load|Motor|\bPWR\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?!\d|\.\d)(?!\s*(?:RPM|r\/min|speed|poles?|hz|v|volts?))\s*(kW|HP|Kilowatt|Horsepower|h\.p\.)?/i,
+      /(\d+(?:\.\d+)?)(?!\d|\.\d)\s*(?:kW|HP|Kilowatt|Horsepower|h\.p\.)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Power|Motor\s+Power|Drive\s+Power|Motor\s+Rating|Motor\s+Capacity|Installed\s+Power|Connected\s+Load|Motor|\bPWR\b)?/i
     ];
 
     let powerMatchedVal: number | null = null;
@@ -1034,8 +1051,8 @@ export class ParameterExtractionEngine {
     //////////////////////////////////////////////////
 
     const inputRpmPatterns = [
-      /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
+      /(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|Drive\s+Motor|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(?:(?:\d+(?:\.\d+)?)\s*(?:kW|HP|kW\s+motor|HP\s+motor|Hz|pole|poles|V|volts?)[\s,;-]*)*?(\d+(?:\.\d+)?)(?!\.\d)(?!\d)(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+      /(\d+(?:\.\d+)?)(?!\.\d)(?!\d)(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Motor\s+RPM|Motor\s+Speed|Drive\s+Motor\s+RPM|Drive\s+Speed|Input\s+Speed|Gearbox\s+Input\s+Speed|Motor\s+Nameplate\s+Speed|Rated\s+Motor\s+Speed|Motor\s+Output\s+Speed|Prime\s+Mover\s+Speed|Engine\s+RPM|Pump\s+RPM|HSS|High\s+Speed\s+Shaft\s+Speed|Synchronous\s+Speed|Prime\s+Mover\s+Speed|Driver\s+Speed|\bINP\s+SPD\b|\bINP\.\s*SPD\b|\bINPUT\s+SPD\b)/i
     ];
 
     let extractedInputRPM: number | null = null;
@@ -1061,8 +1078,8 @@ export class ParameterExtractionEngine {
     }
 
     const outputRpmPatterns = [
-      /(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
-      /(\d+(?:\.\d+)?)(?![.\d])(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
+      /(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Required\s+Output\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)\s*(?:is|of|was)?\s*[:=\s]*\s*(\d+(?:\.\d+)?)(?!\.\d)(?!\d)(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?/i,
+      /(\d+(?:\.\d+)?)(?!\.\d)(?!\d)(?!\s*(?:kW|HP|kw|hp|watts?|W\b|m\/s|m\/min|kN|N|ton|tons|t\b))\s*(RPM|r\/min|speed|RPS|rps)?\s*(?:is|of|was)?\s*[:=\s]*\s*(?:Output\s+Speed|Required\s+Speed|Gearbox\s+Output\s+Speed|Agitator\s+Speed|Drum\s+Speed|Conveyor\s+Speed|Mixer\s+Speed|Shaft\s+Speed|Table\s+Speed|Roll\s+Speed|Kiln\s+Speed|Mill\s+Speed|Bucket\s+Speed|Screw\s+Speed|Driven\s+Equipment\s+Speed|Driven\s+Speed|Low\s+Speed\s+Shaft\s+Speed|LSS|Drum\s+Speed|Equipment\s+Speed|\bOUT\s+SPD\b|\bOUT\.\s*SPD\b|\bOUTPUT\s+SPD\b)/i
     ];
 
     let extractedOutputRPM: number | null = null;
@@ -1695,7 +1712,10 @@ export class MissingDataResolutionEngine {
     }
 
     if (input.outputTorqueNm && input.inputTorqueNm) {
-      return input.outputTorqueNm / input.inputTorqueNm;
+      const ratioGuess = input.outputTorqueNm / input.inputTorqueNm;
+      const stageCount = StageCountEngine.determineStageCount(ratioGuess);
+      const eff = input.efficiency !== undefined ? input.efficiency : Math.pow(0.97, stageCount);
+      return input.outputTorqueNm / (input.inputTorqueNm * eff);
     }
 
     return undefined;

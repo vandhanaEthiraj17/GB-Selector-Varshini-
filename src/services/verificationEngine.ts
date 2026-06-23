@@ -1,5 +1,6 @@
 import { EngineeringDatabaseService } from './EngineeringDatabaseService';
 import { EngineeringReport, seriesLimits } from './engineeringReasoningEngine';
+import { PowerTorqueEngine } from './calculations';
 import { derivationRules } from './derivationEngine';
 
 export interface VerificationCheckNode {
@@ -409,28 +410,28 @@ export function verifyEngineeringReport(report: EngineeringReport, rawExtracted?
 
       if (!nominalCheckPassed) {
         if (gb.size === largestGbInSeries.size) {
-          criticalFailures.push(`Required Torque exceeds largest gearbox capacity: Stage ${i + 1} load (${Math.round(trace.nominalTorque)} N·m) exceeds capacity of the largest series model (${gb.size} Nominal: ${gb.nominal} N·m).`);
+          criticalFailures.push(`Required Torque exceeds largest gearbox capacity: Stage ${i + 1} load (${PowerTorqueEngine.formatTorqueExact(trace.nominalTorque)} N·m) exceeds capacity of the largest series model (${gb.size} Nominal: ${gb.nominal} N·m).`);
         } else {
           if (trace.safetyFactor < 1.0) {
             if (!criticalFailures.some(f => f.startsWith('Safety Factor < 1.0'))) {
               criticalFailures.push(`Safety Factor < 1.0: Stage ${i + 1} safety factor is ${trace.safetyFactor.toFixed(2)} (below allowable limit 1.0).`);
             }
           } else {
-            warnings.push(`Gearbox Selection Warning: Stage ${i + 1} gearbox ${gb.size} Nominal capacity (${gb.nominal} N·m) is overloaded by required nominal load (${Math.round(trace.nominalTorque)} N·m) but satisfies safety margins.`);
+            warnings.push(`Gearbox Selection Warning: Stage ${i + 1} gearbox ${gb.size} Nominal capacity (${gb.nominal} N·m) is overloaded by required nominal load (${PowerTorqueEngine.formatTorqueExact(trace.nominalTorque)} N·m) but satisfies safety margins.`);
           }
         }
       }
 
       if (!ratedCheckPassed) {
         if (gb.size === largestGbInSeries.size) {
-          criticalFailures.push(`Required Torque exceeds largest gearbox capacity: Stage ${i + 1} peak load (${Math.round(trace.maxTorque)} N·m) exceeds capacity of the largest series model (${gb.size} Rated: ${gb.rated} N·m).`);
+          criticalFailures.push(`Required Torque exceeds largest gearbox capacity: Stage ${i + 1} peak load (${PowerTorqueEngine.formatTorqueExact(trace.maxTorque)} N·m) exceeds capacity of the largest series model (${gb.size} Rated: ${gb.rated} N·m).`);
         } else {
           if (trace.safetyFactor < 1.0) {
             if (!criticalFailures.some(f => f.startsWith('Safety Factor < 1.0'))) {
               criticalFailures.push(`Safety Factor < 1.0: Stage ${i + 1} safety factor is ${trace.safetyFactor.toFixed(2)} (below allowable limit 1.0).`);
             }
           } else {
-            warnings.push(`Gearbox Selection Warning: Stage ${i + 1} gearbox ${gb.size} Rated capacity (${gb.rated} N·m) is overloaded by peak required max load (${Math.round(trace.maxTorque)} N·m) but satisfies safety margins.`);
+            warnings.push(`Gearbox Selection Warning: Stage ${i + 1} gearbox ${gb.size} Rated capacity (${gb.rated} N·m) is overloaded by peak required max load (${PowerTorqueEngine.formatTorqueExact(trace.maxTorque)} N·m) but satisfies safety margins.`);
           }
         }
       }

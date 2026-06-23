@@ -17,6 +17,7 @@ import { ScoreGauge } from '../components/ScoreGauge';
 import { ParameterOriginMatrix } from '../components/ParameterOriginMatrix';
 import { EngineeringReport } from '../services/engineeringReasoningEngine';
 import { VerificationReport } from '../services/verificationEngine';
+import { PowerTorqueEngine } from '../services/calculations';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -361,8 +362,8 @@ export const AuditDashboard: React.FC<AuditDashboardProps> = ({
                       <td className="py-2.5 px-3 text-xs font-black text-slate-700">Stage {t.stage}</td>
                       <td className="py-2.5 px-3 text-xs font-bold text-slate-700">{t.ratio.toFixed(2)}</td>
                       <td className="py-2.5 px-3 text-xs text-slate-600">{t.speed.toFixed(1)} RPM</td>
-                      <td className="py-2.5 px-3 text-xs font-bold text-slate-800">{Math.round(t.nominalTorque).toLocaleString()} N·m</td>
-                      <td className="py-2.5 px-3 text-xs font-bold text-slate-800">{Math.round(t.maxTorque).toLocaleString()} N·m</td>
+                      <td className="py-2.5 px-3 text-xs font-bold text-slate-800">{PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} N·m</td>
+                      <td className="py-2.5 px-3 text-xs font-bold text-slate-800">{PowerTorqueEngine.formatTorqueExact(t.maxTorque)} N·m</td>
                       <td className="py-2.5 px-3 text-xs font-bold text-slate-900">
                         MAGTORQ {t.selectedGearbox.size}
                         <span className="font-normal text-slate-400 ml-1">(S{t.selectedGearbox.series})</span>

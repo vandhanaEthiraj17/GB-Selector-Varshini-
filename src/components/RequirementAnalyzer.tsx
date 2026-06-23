@@ -21,6 +21,7 @@ const seriesLimits: Record<string, { min: number; max: number; name: string }> =
   s4: { min: 4.00, max: 4.50, name: 'S4' }
 };
 import { exportToPDF, exportToExcel } from '../services/reportExportService';
+import { PowerTorqueEngine } from '../services/calculations';
 
 interface RequirementAnalyzerProps {
   onAutoFill: (extractedValues: Partial<ProjectInput>) => void;
@@ -503,7 +504,7 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
         <div class="formula-box">
           Input Torque Equation:<br/>
           Tin = (P × 60000) / (2 × π × Nin)<br/>
-          Steps: Tin = (${powerKW.value} kW × 60000) / (2 × π × ${inputRPM.value} RPM) = ${inputTorque.result.toFixed(2)} N·m
+          Steps: Tin = (${powerKW.value} kW × 60000) / (2 × π × ${inputRPM.value} RPM) = ${PowerTorqueEngine.formatTorqueExact(inputTorque.result)} N·m
         </div>
 
         <table>
@@ -524,8 +525,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                 <td style="text-align: center; font-weight: bold;">${t.ratio.toFixed(2)}</td>
                 <td style="text-align: center;">${t.speed.toFixed(1)} RPM</td>
                 <td>${t.torqueSteps}</td>
-                <td style="text-align: center; font-weight: bold;">${Math.round(t.nominalTorque).toLocaleString()} N·m</td>
-                <td style="text-align: center; font-weight: bold;">${Math.round(t.maxTorque).toLocaleString()} N·m</td>
+                <td style="text-align: center; font-weight: bold;">${PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} N·m</td>
+                <td style="text-align: center; font-weight: bold;">${PowerTorqueEngine.formatTorqueExact(t.maxTorque)} N·m</td>
               </tr>
             `).join('')}
           </tbody>
@@ -550,8 +551,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                 <td style="font-weight: bold; color: #0f172a;">MAGTORQ ${t.selectedGearbox.size} (Series ${t.selectedGearbox.series})</td>
                 <td>Nominal: ${t.selectedGearbox.nominal} N·m<br/>Rated: ${t.selectedGearbox.rated} N·m</td>
                 <td>
-                  Nom Check: ${t.selectedGearbox.nominal} / ${Math.round(t.nominalTorque)} = ${(t.selectedGearbox.nominal / t.nominalTorque).toFixed(2)}<br/>
-                  Rated Check: ${t.selectedGearbox.rated} / ${Math.round(t.maxTorque)} = ${(t.selectedGearbox.rated / t.maxTorque).toFixed(2)}
+                  Nom Check: ${t.selectedGearbox.nominal} / ${PowerTorqueEngine.formatTorqueExact(t.nominalTorque)} = ${(t.selectedGearbox.nominal / t.nominalTorque).toFixed(2)}<br/>
+                  Rated Check: ${t.selectedGearbox.rated} / ${PowerTorqueEngine.formatTorqueExact(t.maxTorque)} = ${(t.selectedGearbox.rated / t.maxTorque).toFixed(2)}
                 </td>
                 <td style="text-align: center; font-weight: bold; color: ${t.safetyFactor >= 1.0 ? '#059669' : '#dc2626'}">
                   ${t.safetyFactor.toFixed(2)}
@@ -1064,9 +1065,13 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                               reasoningResult.outputRPM,
                               reasoningResult.totalRatio,
                               reasoningResult.stages,
-                              reasoningResult.serviceFactor
-                            ].map((p, idx) => {
-                              const isNull = p.value === null;
+                              reasoningResult.serviceFactor,
+                              reasoningResult.inputTorqueNm,
+                              reasoningResult.outputTorqueNm,
+                              reasoningResult.shaftSpeedRPM,
+                              reasoningResult.shaftTorqueNm
+                            ].filter((p) => p !== undefined && p !== null).map((p, idx) => {
+                              const isNull = p.value === null || p.value === undefined || (typeof p.value === 'number' && isNaN(p.value));
                               return (
                                 <tr key={idx} className="hover:bg-slate-50/50">
                                   <td className="p-3">
@@ -1081,7 +1086,7 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                     )}
                                   </td>
                                   <td className="p-3 text-center font-extrabold text-slate-900 bg-slate-50/20 whitespace-nowrap">
-                                    {isNull ? 'N/A' : (
+                                    {isNull ? 'UNRESOLVED' : (
                                       p.name.includes('Ratio') 
                                         ? `${p.value!.toFixed(2)}:1`
                                         : p.name.includes('Speed') || p.name.includes('RPM')
@@ -1090,6 +1095,8 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                         ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} kW`
                                         : p.name.includes('HP')
                                         ? `${p.value! % 1 === 0 ? p.value! : p.value!.toFixed(2)} HP`
+                                        : p.name.includes('Torque')
+                                        ? `${PowerTorqueEngine.formatTorqueExact(p.value!)} N·m`
                                         : p.value
                                     )}
                                   </td>
@@ -1301,7 +1308,7 @@ export const RequirementAnalyzer: React.FC<RequirementAnalyzerProps> = ({ onAuto
                                   {reasoningResult.stageTraces.map((t, idx) => (
                                     <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-150 space-y-1 font-mono text-[10.5px]">
                                       <div className="font-extrabold text-slate-700">Stage {t.stage} Torque amplification:</div>
-                                      <div className="font-semibold text-slate-500">Formula: Tout = Tin &times; Ratio &times; 0.97 (efficiency)</div>
+                                      <div className="font-semibold text-slate-500">Formula: {t.torqueFormula}</div>
                                       <div className="font-bold text-slate-800">Steps: {t.torqueSteps}</div>
                                     </div>
                                   ))}
